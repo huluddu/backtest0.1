@@ -7,6 +7,7 @@ import datetime
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import itertools
+import random
 from pykrx import stock
 
 
@@ -137,6 +138,30 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
     if not last_buy_date and not last_sell_date:
         st.warning("❗최근 매수/매도 조건에 부합한 날이 없습니다.")
 
+# ✅ 전략 프리셋 목록 정의
+PRESETS = {
+    "SOXL 최고 전략": {
+        "ma_buy": 25, "offset_ma_buy": 1, "offset_cl_buy": 25,
+        "ma_sell": 25, "offset_ma_sell": 1, "offset_cl_sell": 1,
+        "ma_compare_short": 25, "ma_compare_long": 25,
+        "offset_compare_short": 25, "offset_compare_long": 1,
+        "stop_loss_pct": 0.0, "take_profit_pct": 0.0
+    },
+    "추세 강한 매수": {
+        "ma_buy": 15, "offset_ma_buy": 1, "offset_cl_buy": 15,
+        "ma_sell": 15, "offset_ma_sell": 1, "offset_cl_sell": 1,
+        "ma_compare_short": 5, "ma_compare_long": 25,
+        "offset_compare_short": 1, "offset_compare_long": 1,
+        "stop_loss_pct": 5.0, "take_profit_pct": 15.0
+    },
+    "빠른 손절익절": {
+        "ma_buy": 5, "offset_ma_buy": 1, "offset_cl_buy": 5,
+        "ma_sell": 5, "offset_ma_sell": 1, "offset_cl_sell": 1,
+        "ma_compare_short": 0, "ma_compare_long": 0,
+        "offset_compare_short": 1, "offset_compare_long": 1,
+        "stop_loss_pct": 3.0, "take_profit_pct": 7.0
+    }
+}
 
 # ✅ UI 구성
 st.set_page_config(page_title="전략 백테스트", layout="wide")
@@ -159,7 +184,7 @@ with st.expander("📈 전략 조건 설정"):
     st.markdown(
         """
         - `매수 종가 조건일` 전 종가가  
-        - `매수 이평선 조건일' 전 `매수 이평선`일 이동평균선보다 크고  
+        - `매수 이평선 조건일` 전 `매수 이평선`일 이동평균선보다 크고  
         - 동시에 `추세 옛날 조건일` 전 `추세 옛날 이평선` 이동평균선이  
         - `추세 최근 조건일` 전 `추세 최근 이평선` 이동평균선보다 크거나 같을 때 **매수**
         """
@@ -168,24 +193,33 @@ with st.expander("📈 전략 조건 설정"):
     st.markdown(
         """
         - `매도 종가 조건일` 전 종가가  
-        - `매도 이평선 조건일' 전 `매도 이평선`일 이동평균선보다 클 때 **매도**
+        - `매도 이평선 조건일` 전 `매도 이평선`일 이동평균선보다 클 때 **매도**
         """
     )
-    ma_buy = st.number_input("매수 이평선", value=25)
-    offset_ma_buy = st.number_input("매수 이평선 조건일", value=1)
-    offset_cl_buy = st.number_input("매수 종가 조건일", value=25)
 
-    ma_sell = st.number_input("매도 MA", value=25)
-    offset_ma_sell = st.number_input("매도 MA 오프셋", value=1)
-    offset_cl_sell = st.number_input("매도 종가 오프셋", value=1)
+# 📌 프리셋 선택 UI
+    selected_preset = st.selectbox("🎯 전략 프리셋 선택", ["직접 설정"] + list(PRESETS.keys()))
 
-    ma_compare_short = st.number_input("추세 옛날 이평선 (0=비활성)", value=0)
-    ma_compare_long = st.number_input("추세 최근 이평선 (0=비활성)", value=0)
-    offset_compare_short = st.number_input("추세 옛날 조건일", value=1)
-    offset_compare_long = st.number_input("추세 최근 조건일", value=1)
+    if selected_preset != "직접 설정":
+        preset_values = PRESETS[selected_preset]
+    else:
+        preset_values = {}
 
-    stop_loss_pct = st.number_input("손절 기준 (%)", value=0.0, step=0.5, help="예: 10 입력 시 -10% 하락 시 손절")
-    take_profit_pct = st.number_input("익절 기준 (%)", value=0.0, step=0.5, help="예: 20 입력 시 +20% 상승 시 익절")
+    ma_buy = st.number_input("매수 이평선", value=preset_values.get("ma_buy", 25))
+    offset_ma_buy = st.number_input("매수 이평선 조건일", value=preset_values.get("offset_ma_buy", 1))
+    offset_cl_buy = st.number_input("매수 종가 조건일", value=preset_values.get("offset_cl_buy", 25))
+
+    ma_sell = st.number_input("매도 MA", value=preset_values.get("ma_sell", 25))
+    offset_ma_sell = st.number_input("매도 MA 오프셋", value=preset_values.get("offset_ma_sell", 1))
+    offset_cl_sell = st.number_input("매도 종가 오프셋", value=preset_values.get("offset_cl_sell", 1))
+
+    ma_compare_short = st.number_input("추세 옛날 이평선 (0=비활성)", value=preset_values.get("ma_compare_short", 0))
+    ma_compare_long = st.number_input("추세 최근 이평선 (0=비활성)", value=preset_values.get("ma_compare_long", 0))
+    offset_compare_short = st.number_input("추세 옛날 조건일", value=preset_values.get("offset_compare_short", 1))
+    offset_compare_long = st.number_input("추세 최근 조건일", value=preset_values.get("offset_compare_long", 1))
+    stop_loss_pct = st.number_input("손절 기준 (%)", value=preset_values.get("stop_loss_pct", 0.0), step=0.5)
+    take_profit_pct = st.number_input("익절 기준 (%)", value=preset_values.get("take_profit_pct", 0.0), step=0.5)
+
 
 # ✅ 시그널 체크
 if st.button("📌 오늘 시그널 체크"):
@@ -331,6 +365,58 @@ def backtest_strategy_with_ma_compare(signal_ticker, trade_ticker,
         "매매 로그": logs
     }
 
+def run_random_simulations(n_simulations=20):
+    results = []
+    for _ in range(n_simulations):
+        # 랜덤 파라미터 생성
+        ma_buy = random.choice([5, 10, 15, 25, 50])
+        offset_ma_buy = random.choice([1, 5, 15, 25])
+        offset_cl_buy = random.choice([1, 5, 15, 25])
+
+        ma_sell = random.choice([5, 10, 15, 25, 50])
+        offset_ma_sell = random.choice([1, 5, 15, 25])
+        offset_cl_sell = random.choice([1, 5, 15, 25])
+
+        ma_compare_short = random.choice([0, 5, 15, 25, 50])
+        ma_compare_long = random.choice([0, 5, 15, 25, 50])
+        offset_compare_short = random.choice([1, 5, 15, 25, 50])
+        offset_compare_long = 1
+
+        stop_loss_pct = random.choice([0, 3, 5, 7])
+        take_profit_pct = random.choice([0, 7, 10, 15])
+
+        result = backtest_strategy_with_ma_compare(
+            signal_ticker=signal_ticker,
+            trade_ticker=trade_ticker,
+            ma_buy=ma_buy,
+            offset_ma_buy=offset_ma_buy,
+            ma_sell=ma_sell,
+            offset_ma_sell=offset_ma_sell,
+            offset_cl_buy=offset_cl_buy,
+            offset_cl_sell=offset_cl_sell,
+            ma_compare_short=ma_compare_short if ma_compare_short > 0 else None,
+            ma_compare_long=ma_compare_long if ma_compare_long > 0 else None,
+            offset_compare_short=offset_compare_short,
+            offset_compare_long=offset_compare_long,
+            stop_loss_pct=stop_loss_pct,
+            take_profit_pct=take_profit_pct,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+        if result:
+            results.append({
+                **result,
+                "ma_buy": ma_buy,
+                "ma_sell": ma_sell,
+                "stop_loss": stop_loss_pct,
+                "take_profit": take_profit_pct,
+                "승률": result["승률 (%)"],
+                "수익률": result["수익률 (%)"]
+            })
+    return pd.DataFrame(results)
+
+
 # ✅ UI 버튼 및 시각화
 if st.button("✅ 백테스트 실행"):
     result = backtest_strategy_with_ma_compare(
@@ -379,3 +465,8 @@ if st.button("✅ 백테스트 실행"):
         # 다운로드 버튼
         csv = df_log.reset_index().to_csv(index=False).encode("utf-8-sig")
         st.download_button("⬇️ 백테스트 결과 다운로드 (CSV)", data=csv, file_name="backtest_result.csv", mime="text/csv")
+
+if st.button("🧪 랜덤 전략 시뮬레이션 (30회 실행)"):
+    df_sim = run_random_simulations(30)
+    st.subheader("📈 랜덤 전략 시뮬레이션 결과")
+    st.dataframe(df_sim.sort_values(by="수익률", ascending=False).reset_index(drop=True))
