@@ -420,7 +420,7 @@ def run_random_simulations(n_simulations=30):
         offset_ma_buy = random.choice([1, 5, 15, 25])
         offset_cl_buy = random.choice([1, 5, 15, 25])
 
-        ma_sell = random.choice([5, 10, 15, 25, 50])
+        ma_sell = random.choice([5, 10, 15, 25])
         offset_ma_sell = random.choice([1, 5, 15, 25])
         offset_cl_sell = random.choice([1, 5, 15, 25])
 
@@ -429,8 +429,8 @@ def run_random_simulations(n_simulations=30):
         offset_compare_short = random.choice([1, 5, 15, 25, 50])
         offset_compare_long = 1
 
-        stop_loss_pct = random.choice([0, 3, 5, 7])
-        take_profit_pct = random.choice([0, 7, 10, 15])
+        stop_loss_pct = random.choice([0, 10])
+        take_profit_pct = random.choice([0, 10, 25, 50])
 
         result = backtest_strategy_with_ma_compare(
             signal_ticker=signal_ticker,
