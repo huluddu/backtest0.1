@@ -147,19 +147,13 @@ PRESETS = {
         "offset_compare_short": 25, "offset_compare_long": 1,
         "stop_loss_pct": 0.0, "take_profit_pct": 0.0
     },
-    "추세 강한 매수": {
-        "ma_buy": 15, "offset_ma_buy": 1, "offset_cl_buy": 15,
-        "ma_sell": 15, "offset_ma_sell": 1, "offset_cl_sell": 1,
-        "ma_compare_short": 5, "ma_compare_long": 25,
-        "offset_compare_short": 1, "offset_compare_long": 1,
-        "stop_loss_pct": 5.0, "take_profit_pct": 15.0
-    },
-    "빠른 손절익절": {
-        "ma_buy": 5, "offset_ma_buy": 1, "offset_cl_buy": 5,
-        "ma_sell": 5, "offset_ma_sell": 1, "offset_cl_sell": 1,
-        "ma_compare_short": 0, "ma_compare_long": 0,
-        "offset_compare_short": 1, "offset_compare_long": 1,
-        "stop_loss_pct": 3.0, "take_profit_pct": 7.0
+
+    "SOXL 익절 포함 최고 전략": {
+        "ma_buy": 25, "offset_ma_buy": 5, "offset_cl_buy": 25,
+        "ma_sell": 25, "offset_ma_sell": 1, "offset_cl_sell": 1,
+        "ma_compare_short": 25, "ma_compare_long": 25,
+        "offset_compare_short": 25, "offset_compare_long": 1,
+        "stop_loss_pct": 0.0, "take_profit_pct": 50.0
     }
 }
 
@@ -180,22 +174,8 @@ with col4:
     end_date = st.date_input("종료일", value=datetime.date.today())
 
 with st.expander("📈 전략 조건 설정"):
-    st.markdown("## 🔹 매수 조건 설명")
-    st.markdown(
-        """
-        - `매수 종가 조건일` 전 종가가  
-        - `매수 이평선 조건일` 전 `매수 이평선`일 이동평균선보다 크고  
-        - 동시에 `추세 옛날 조건일` 전 `추세 옛날 이평선` 이동평균선이  
-        - `추세 최근 조건일` 전 `추세 최근 이평선` 이동평균선보다 크거나 같을 때 **매수**
-        """
-    )
-    st.markdown("## 🔹매도 조건 설명")
-    st.markdown(
-        """
-        - `매도 종가 조건일` 전 종가가  
-        - `매도 이평선 조건일` 전 `매도 이평선`일 이동평균선보다 클 때 **매도**
-        """
-    )
+
+# ✅ 전략 행동 방식 선택
 
 # 📌 프리셋 선택 UI
     selected_preset = st.selectbox("🎯 전략 프리셋 선택", ["직접 설정"] + list(PRESETS.keys()))
@@ -205,20 +185,38 @@ with st.expander("📈 전략 조건 설정"):
     else:
         preset_values = {}
 
-    ma_buy = st.number_input("매수 이평선", value=preset_values.get("ma_buy", 25))
-    offset_ma_buy = st.number_input("매수 이평선 조건일", value=preset_values.get("offset_ma_buy", 1))
-    offset_cl_buy = st.number_input("매수 종가 조건일", value=preset_values.get("offset_cl_buy", 25))
 
-    ma_sell = st.number_input("매도 MA", value=preset_values.get("ma_sell", 25))
-    offset_ma_sell = st.number_input("매도 MA 오프셋", value=preset_values.get("offset_ma_sell", 1))
-    offset_cl_sell = st.number_input("매도 종가 오프셋", value=preset_values.get("offset_cl_sell", 1))
+    col1, col2 = st.columns(2)
 
-    ma_compare_short = st.number_input("추세 옛날 이평선 (0=비활성)", value=preset_values.get("ma_compare_short", 0))
-    ma_compare_long = st.number_input("추세 최근 이평선 (0=비활성)", value=preset_values.get("ma_compare_long", 0))
-    offset_compare_short = st.number_input("추세 옛날 조건일", value=preset_values.get("offset_compare_short", 1))
-    offset_compare_long = st.number_input("추세 최근 조건일", value=preset_values.get("offset_compare_long", 1))
-    stop_loss_pct = st.number_input("손절 기준 (%)", value=preset_values.get("stop_loss_pct", 0.0), step=0.5)
-    take_profit_pct = st.number_input("익절 기준 (%)", value=preset_values.get("take_profit_pct", 0.0), step=0.5)
+    with col1:
+        st.markdown("**📥 매수 조건**")
+        offset_ma_buy = st.number_input("□일 전", key="offset_ma_buy", value=preset_values.get("offset_ma_buy", 1))
+        ma_buy = st.number_input("□일 이동평균선보다", key="ma_buy", value=preset_values.get("ma_buy", 25))
+        offset_cl_buy = st.number_input("□일 전 종가가 크면 **매수**", key="offset_cl_buy", value=preset_values.get("offset_cl_buy", 25))
+        st.markdown("---") 
+        st.markdown("근데, 필요시 조건을 더 해")
+        offset_compare_short = st.number_input("□일 전", key="offset_compare_short", value=preset_values.get("offset_compare_short", 1))
+        ma_compare_short = st.number_input("□일 이동평균선보다 (0=비활성)", key="ma_compare_short", value=preset_values.get("ma_compare_short", 0))
+        offset_compare_long = st.number_input("□일 전", key="offset_compare_long", value=preset_values.get("offset_compare_long", 1))
+        ma_compare_long = st.number_input("□일 이동평균선이 커야 **매수**", key="ma_compare_long", value=preset_values.get("ma_compare_long", 0))
+
+    with col2:
+        st.markdown("**📤 매도 조건**")
+        offset_ma_sell = st.number_input("□일 전", key="offset_ma_sell", value=preset_values.get("offset_ma_sell", 1))
+        ma_sell = st.number_input("□일 이동평균선보다", key="ma_sell", value=preset_values.get("ma_sell", 25))
+        offset_cl_sell = st.number_input("□일 전 종가가 작으면 매도", key="offset_cl_sell", value=preset_values.get("offset_cl_sell", 1))
+
+        stop_loss_pct = st.number_input("손절 기준 (%)", key="stop_loss_pct", value=preset_values.get("stop_loss_pct", 0.0), step=0.5)
+        take_profit_pct = st.number_input("익절 기준 (%)", key="take_profit_pct", value=preset_values.get("take_profit_pct", 0.0), step=0.5)
+
+    strategy_behavior = st.selectbox(
+        "⚙️ 매수/매도 조건 동시 발생 시 행동",
+        options=[
+            "1. 포지션 없으면 매수 / 보유 중이면 매도",
+            "2. 포지션 없으면 매수 / 보유 중이면 HOLD",
+            "3. 포지션 없으면 HOLD / 보유 중이면 매도"
+        ]
+    )
 
 
 # ✅ 시그널 체크
@@ -238,7 +236,7 @@ if st.button("📌 오늘 시그널 체크"):
             offset_compare_long=offset_compare_long
         )
 
-
+######### 주요 코드 [백테스트] #########
 def backtest_strategy_with_ma_compare(signal_ticker, trade_ticker,
                                       ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
                                       offset_cl_buy, offset_cl_sell,
@@ -247,8 +245,8 @@ def backtest_strategy_with_ma_compare(signal_ticker, trade_ticker,
                                       initial_cash=5_000_000,
                                       start_date=None, end_date=None,
                                       min_days_between_trades=0,
-                                      stop_loss_pct=0.0,                 
-                                      take_profit_pct=0.0):            
+                                      stop_loss_pct=0.0,
+                                      take_profit_pct=0.0):
 
     signal_df = get_data(signal_ticker, start_date, end_date)
     trade_df = get_data(trade_ticker, start_date, end_date)
@@ -285,32 +283,81 @@ def backtest_strategy_with_ma_compare(signal_ticker, trade_ticker,
         current_date = trade_df["Date"].iloc[i]
 
         trend_ok = True
-        trend_desc = "비활성화"
         if ma_compare_short and ma_compare_long:
             ma_short = signal_df["MA_SHORT"].iloc[i - offset_compare_short]
             ma_long = signal_df["MA_LONG"].iloc[i - offset_compare_long]
             trend_ok = ma_short >= ma_long
-            trend_desc = f"{ma_short:.2f} vs {ma_long:.2f}"
 
-        allow_trade = True
-        if logs:
-            last_trade_date = datetime.datetime.strptime(logs[-1]["날짜"], "%Y-%m-%d")
-            if (current_date - last_trade_date).days < min_days_between_trades:
-                allow_trade = False
+        profit_pct = (close_today - buy_price) / buy_price * 100 if buy_price else 0
 
         signal = "HOLD"
-        if position == 0 and cl_b > ma_b and trend_ok and allow_trade:
-            position = cash / close_today
-            cash = 0.0
-            signal = "BUY"
-            buy_price = close_today
-        elif position > 0:
-            profit_pct = (close_today - buy_price) / buy_price * 100 if buy_price else 0
-            sell_condition = cl_s < ma_s
-            stop_hit = stop_loss_pct > 0 and profit_pct <= -stop_loss_pct
-            take_hit = take_profit_pct > 0 and profit_pct >= take_profit_pct
 
-            if (sell_condition or stop_hit or take_hit) and allow_trade:
+        buy_condition = cl_b > ma_b and trend_ok
+        sell_condition = cl_s < ma_s
+        stop_hit = stop_loss_pct > 0 and profit_pct <= -stop_loss_pct
+        take_hit = take_profit_pct > 0 and profit_pct >= take_profit_pct
+
+        # ✅ 전략 1 / 2 / 3 분기 처리
+        if strategy_behavior.startswith("1"):
+            if buy_condition and sell_condition:
+                if position == 0:
+                    position = cash / close_today
+                    cash = 0.0
+                    signal = "BUY"
+                    buy_price = close_today
+                else:
+                    cash = position * close_today
+                    position = 0.0
+                    signal = "SELL"
+                    buy_price = None
+            elif position == 0 and buy_condition:
+                position = cash / close_today
+                cash = 0.0
+                signal = "BUY"
+                buy_price = close_today
+            elif position > 0 and (sell_condition or stop_hit or take_hit):
+                cash = position * close_today
+                position = 0.0
+                signal = "SELL"
+                buy_price = None
+
+        elif strategy_behavior.startswith("2"):
+            if buy_condition and sell_condition:
+                if position == 0:
+                    position = cash / close_today
+                    cash = 0.0
+                    signal = "BUY"
+                    buy_price = close_today
+                else:
+                    signal = "HOLD"
+            elif position == 0 and buy_condition:
+                position = cash / close_today
+                cash = 0.0
+                signal = "BUY"
+                buy_price = close_today
+            elif position > 0 and (sell_condition or stop_hit or take_hit):
+                cash = position * close_today
+                position = 0.0
+                signal = "SELL"
+                buy_price = None
+
+        elif strategy_behavior.startswith("3"):
+            if buy_condition and sell_condition:
+                if position == 0:
+                    signal = "HOLD"  # 매수/매도 모두 만족, 포지션 없으면 HOLD
+                else:
+                    cash = position * close_today
+                    position = 0.0
+                    signal = "SELL"
+                    buy_price = None
+
+            elif buy_condition and position == 0:
+                position = cash / close_today
+                cash = 0.0
+                signal = "BUY"
+                buy_price = close_today
+
+            elif position > 0 and (sell_condition or stop_hit or take_hit):
                 cash = position * close_today
                 position = 0.0
                 signal = "SELL"
@@ -356,16 +403,16 @@ def backtest_strategy_with_ma_compare(signal_ticker, trade_ticker,
     return {
         "최종 자산": round(asset_curve[-1]),
         "수익률 (%)": round((asset_curve[-1] - initial_cash) / initial_cash * 100, 2),
+        "승률 (%)": win_rate,
         "MDD (%)": round(mdd, 2),
         "MDD 발생일": mdd_date.strftime("%Y-%m-%d"),
         "MDD 회복일": recovery_date.strftime("%Y-%m-%d") if recovery_date else "미회복",
         "회복 기간 (일)": (recovery_date - mdd_date).days if recovery_date else None,
         "총 매매 횟수": total_trades,
-        "승률 (%)": win_rate,
         "매매 로그": logs
     }
 
-def run_random_simulations(n_simulations=20):
+def run_random_simulations(n_simulations=30):
     results = []
     for _ in range(n_simulations):
         # 랜덤 파라미터 생성
@@ -405,10 +452,19 @@ def run_random_simulations(n_simulations=20):
         )
 
         if result:
+            result_clean = {k: v for k, v in result.items() if k != "매매 로그"}
             results.append({
-                **result,
+                **result_clean,
                 "ma_buy": ma_buy,
+	    "offset_ma_buy": offset_ma_buy,
                 "ma_sell": ma_sell,
+	    "offset_ma_sell": offset_ma_sell,
+                "offset_cl_buy": offset_cl_buy,
+                "offset_cl_sell": offset_cl_sell,
+                "ma_compare_short": ma_compare_short if ma_compare_short > 0 else None,
+                "ma_compare_long": ma_compare_long if ma_compare_long > 0 else None,
+                "offset_compare_short": offset_compare_short,
+                "offset_compare_long": offset_compare_long,
                 "stop_loss": stop_loss_pct,
                 "take_profit": take_profit_pct,
                 "승률": result["승률 (%)"],
@@ -446,19 +502,61 @@ if st.button("✅ 백테스트 실행"):
         df_log["날짜"] = pd.to_datetime(df_log["날짜"])
         df_log.set_index("날짜", inplace=True)
 
+############# 그래프 그리기 ###########
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df_log.index, y=df_log["자산"], mode="lines", name="Asset", yaxis="y1"))
-        fig.add_trace(go.Scatter(x=df_log.index, y=df_log["종가"], mode="lines", name="Price", yaxis="y2"))
+
+        # 자산 곡선 (왼쪽 y축)
+        fig.add_trace(go.Scatter(
+            x=df_log.index,
+            y=df_log["자산"],
+            mode="lines",
+            name="Asset",
+            yaxis="y1"
+        ))
+
+        # 종가 (오른쪽 y축)
+        fig.add_trace(go.Scatter(
+            x=df_log.index,
+            y=df_log["종가"],
+            mode="lines",
+            name="Price",
+            yaxis="y2"
+        ))
+
+        # 매수 마커
+        buy_points = df_log[df_log["신호"] == "BUY"]
+        fig.add_trace(go.Scatter(
+            x=buy_points.index,
+            y=buy_points["종가"],
+            mode="markers",
+            name="BUY",
+            yaxis="y2",
+            marker=dict(color="green", size=5, symbol="triangle-up")
+        ))
+
+        # 매도 마커
+        sell_points = df_log[df_log["신호"] == "SELL"]
+        fig.add_trace(go.Scatter(
+            x=sell_points.index,
+            y=sell_points["종가"],
+            mode="markers",
+            name="SELL",
+            yaxis="y2",
+            marker=dict(color="red", size=5, symbol="triangle-down")
+        ))
 
         fig.update_layout(
-            title="자산 & 종가 시각화",
+            title="📈 자산 & 종가 흐름 (BUY/SELL 시점 포함)",
             yaxis=dict(title="Asset"),
             yaxis2=dict(title="Price", overlaying="y", side="right"),
             hovermode="x unified",
-            height=500
+            height=800
         )
+
         st.plotly_chart(fig, use_container_width=True)
 
+
+#############
         with st.expander("🧾 매매 로그"):
             st.dataframe(df_log)
 
@@ -466,7 +564,7 @@ if st.button("✅ 백테스트 실행"):
         csv = df_log.reset_index().to_csv(index=False).encode("utf-8-sig")
         st.download_button("⬇️ 백테스트 결과 다운로드 (CSV)", data=csv, file_name="backtest_result.csv", mime="text/csv")
 
-if st.button("🧪 랜덤 전략 시뮬레이션 (30회 실행)"):
-    df_sim = run_random_simulations(30)
+if st.button("🧪 랜덤 전략 시뮬레이션 (50회 실행)"):
+    df_sim = run_random_simulations(50)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률", ascending=False).reset_index(drop=True))
