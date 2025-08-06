@@ -370,8 +370,21 @@ def backtest_strategy_with_ma_compare(signal_ticker, trade_ticker,
             "날짜": current_date.strftime("%Y-%m-%d"),
             "종가": round(close_today, 2),
             "신호": signal,
-            "자산": round(total)
+            "자산": round(total),
+            "매수시그널": buy_condition,
+            "매도시그널": sell_condition,
+            "매수이유": (
+                f"종가({cl_b:.2f}) > MA_BUY({ma_b:.2f})"
+                + (f" + 추세필터 통과" if trend_ok else " + 추세필터 불통과")
+                if buy_condition else ""
+            ),
+            "매도이유": (
+                f"종가({cl_s:.2f}) < MA_SELL({ma_s:.2f})"
+                if sell_condition else ""
+            ),
+            "양시그널": buy_condition and sell_condition 
         })
+
 
     df = trade_df.iloc[-len(asset_curve):].copy()
     df["Asset"] = asset_curve
@@ -523,28 +536,73 @@ if st.button("✅ 백테스트 실행"):
             yaxis="y2"
         ))
 
-        # 매수 마커
+        # 매수/매도 시점 필터
         buy_points = df_log[df_log["신호"] == "BUY"]
+        sell_points = df_log[df_log["신호"] == "SELL"]
+
+        # 동시 만족 필터
+        both_buy = buy_points[buy_points["양시그널"] == True]
+        both_sell = sell_points[sell_points["양시그널"] == True]
+
+        # 일반 BUY 마커
         fig.add_trace(go.Scatter(
             x=buy_points.index,
             y=buy_points["종가"],
             mode="markers",
             name="BUY",
             yaxis="y2",
-            marker=dict(color="green", size=5, symbol="triangle-up")
+            marker=dict(
+                color="green",
+                size=6,
+                symbol="triangle-up"
+            )
         ))
 
-        # 매도 마커
-        sell_points = df_log[df_log["신호"] == "SELL"]
+        # 일반 SELL 마커
         fig.add_trace(go.Scatter(
             x=sell_points.index,
             y=sell_points["종가"],
             mode="markers",
             name="SELL",
             yaxis="y2",
-            marker=dict(color="red", size=5, symbol="triangle-down")
+            marker=dict(
+                color="red",
+                size=6,
+                symbol="triangle-down"
+            )
         ))
 
+        # 동시 BUY 마커 (노란 테두리)
+        fig.add_trace(go.Scatter(
+            x=both_buy.index,
+            y=both_buy["종가"],
+            mode="markers",
+            name="BUY (양시그널)",
+            yaxis="y2",
+            marker=dict(
+                color="green",
+                size=9,
+                symbol="triangle-up",
+                line=dict(color="yellow", width=2)
+            )
+        ))
+
+        # 동시 SELL 마커 (노란 테두리)
+        fig.add_trace(go.Scatter(
+            x=both_sell.index,
+            y=both_sell["종가"],
+            mode="markers",
+            name="SELL (양시그널)",
+            yaxis="y2",
+            marker=dict(
+                color="red",
+                size=9,
+                symbol="triangle-down",
+                line=dict(color="yellow", width=2)
+            )
+        ))
+
+        # 레이아웃 설정
         fig.update_layout(
             title="📈 자산 & 종가 흐름 (BUY/SELL 시점 포함)",
             yaxis=dict(title="Asset"),
@@ -554,7 +612,6 @@ if st.button("✅ 백테스트 실행"):
         )
 
         st.plotly_chart(fig, use_container_width=True)
-
 
 #############
         with st.expander("🧾 매매 로그"):
