@@ -1,5 +1,3 @@
-# ✅ 완성형: 안정 기반에 전체 기능 통합 (시그널 체크 + 백테스트 + 그리드서치)
-
 import streamlit as st
 import pandas as pd
 import yfinance as yf
@@ -9,44 +7,82 @@ import plotly.graph_objects as go
 import itertools
 import random
 from pykrx import stock
+from functools import lru_cache
+import numpy as np
+
+
+# ===== Fast helpers =====
+def _fast_ma(x: np.ndarray, w: int) -> np.ndarray:
+    """단순이동평균을 numpy.convolve로 빠르게 계산"""
+    if w is None or w <= 1:
+        return x.astype(float)
+    kernel = np.ones(w, dtype=float) / w
+    y = np.full(x.shape, np.nan, dtype=float)
+    if len(x) >= w:
+        conv = np.convolve(x, kernel, mode="valid")
+        y[w-1:] = conv
+    return y
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def get_krx_data_cached(ticker: str, start_date, end_date):
+    """KRX(숫자티커)용: pykrx에서 종가만 가져와 정리"""
+    df = stock.get_etf_ohlcv_by_date(start_date.strftime("%Y%m%d"),
+                                     end_date.strftime("%Y%m%d"),
+                                     ticker)
+    df = df[["종가"]].reset_index().rename(columns={"날짜": "Date", "종가": "Close"})
+    return df
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def get_yf_data_cached(ticker: str, start_date, end_date):
+    """야후파이낸스용: Close만 단일 컬럼으로 정리"""
+    df = yf.download(ticker, start=start_date, end=end_date)
+    if isinstance(df.columns, pd.MultiIndex):
+        # 티커 멀티컬럼 보정
+        if ("Close", ticker.upper()) in df.columns:
+            df = df[("Close", ticker.upper())]
+        elif "Close" in df.columns.get_level_values(0):
+            df = df["Close"]
+        df = df.to_frame(name="Close")
+    elif isinstance(df, pd.Series):
+        df = df.to_frame(name="Close")
+    df = df[["Close"]].dropna().reset_index()
+    df.columns = ["Date", "Close"]
+    return df
+
+def get_data(ticker: str, start_date, end_date) -> pd.DataFrame:
+    """티커 타입에 따라 KRX/yf 로더 분기"""
+    try:
+        if ticker.lower().endswith(".ks") or ticker.isdigit():
+            return get_krx_data_cached(ticker, start_date, end_date)
+        return get_yf_data_cached(ticker, start_date, end_date)
+    except Exception as e:
+        st.error(f"❌ 데이터 로딩 실패: {e}")
+        return pd.DataFrame()
+
+
+
+# ===== Base prepare =====
+@st.cache_data(show_spinner=False, ttl=1800)
+def prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool):
+    """한 번에 머지 + 필요한 모든 MA(신호용) 미리 계산"""
+    sig = get_data(signal_ticker, start_date, end_date).sort_values("Date")
+    trd = get_data(trade_ticker, start_date, end_date).sort_values("Date")
+    base = pd.merge(sig, trd, on="Date", suffixes=("_sig", "_trd"), how="inner").dropna().reset_index(drop=True)
+
+    x_sig = base["Close_sig"].to_numpy(dtype=float)
+    x_trd = base["Close_trd"].to_numpy(dtype=float)
+
+    ma_dict_sig = {}
+    for w in sorted(set([w for w in ma_pool if w and w > 0])):
+        ma_dict_sig[w] = _fast_ma(x_sig, w)
+
+    return base, x_sig, x_trd, ma_dict_sig
 
 
 def get_mdd(asset_curve):
     peak = asset_curve.cummax()
     drawdown = (asset_curve - peak) / peak
     return drawdown.min() * 100
-
-
-def get_krx_data(ticker, start_date, end_date):
-    df = stock.get_etf_ohlcv_by_date(start_date.strftime("%Y%m%d"), end_date.strftime("%Y%m%d"), ticker)
-    df = df[["종가"]].reset_index()
-    df.columns = ["Date", "Close"]
-    return df
-
-
-def get_data(ticker, start_date, end_date):
-    try:
-        if ticker.lower().endswith(".ks") or ticker.isdigit():
-            return get_krx_data(ticker, start_date, end_date)
-        else:
-            df = yf.download(ticker, start=start_date, end=end_date)
-
-            # ✅ MultiIndex일 경우 보정
-            if isinstance(df.columns, pd.MultiIndex):
-                if ("Close", ticker.upper()) in df.columns:
-                    df = df[("Close", ticker.upper())]
-                elif "Close" in df.columns.get_level_values(0):
-                    df = df["Close"]
-                df = df.to_frame(name="Close")
-            elif isinstance(df, pd.Series):
-                df = df.to_frame(name="Close")
-
-            # ✅ 마지막으로 Close만 남기고 정리
-            df = df[["Close"]].dropna().reset_index()
-            return df
-    except Exception as e:
-        st.error(f"❌ 데이터 로딩 실패: {e}")
-        return pd.DataFrame()
 
 
 def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
@@ -138,6 +174,7 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
     if not last_buy_date and not last_sell_date:
         st.warning("❗최근 매수/매도 조건에 부합한 날이 없습니다.")
 
+
 # ✅ 전략 프리셋 목록 정의
 PRESETS = {
     "SOXL 최고 전략": {
@@ -161,6 +198,8 @@ PRESETS = {
 st.set_page_config(page_title="전략 백테스트", layout="wide")
 st.title("📊 전략 백테스트 웹앱")
 
+st.markdown("KODEX미국반도체 390390, KODEX미국나스닥100 379810, ACEKRX금현물 411060, ACE미국30년국채액티브(H) 453850, ACE미국빅테크TOP7Plus 465580")
+
 col1, col2 = st.columns(2)
 with col1:
     signal_ticker = st.text_input("시그널 판단용 티커", value="SOXL")
@@ -174,10 +213,7 @@ with col4:
     end_date = st.date_input("종료일", value=datetime.date.today())
 
 with st.expander("📈 전략 조건 설정"):
-
-# ✅ 전략 행동 방식 선택
-
-# 📌 프리셋 선택 UI
+    # 📌 프리셋 선택 UI
     selected_preset = st.selectbox("🎯 전략 프리셋 선택", ["직접 설정"] + list(PRESETS.keys()))
 
     if selected_preset != "직접 설정":
@@ -185,22 +221,21 @@ with st.expander("📈 전략 조건 설정"):
     else:
         preset_values = {}
 
+    col_left, col_right = st.columns(2)
 
-    col1, col2 = st.columns(2)
-
-    with col1:
+    with col_left:
         st.markdown("**📥 매수 조건**")
         offset_ma_buy = st.number_input("□일 전", key="offset_ma_buy", value=preset_values.get("offset_ma_buy", 1))
         ma_buy = st.number_input("□일 이동평균선보다", key="ma_buy", value=preset_values.get("ma_buy", 25))
         offset_cl_buy = st.number_input("□일 전 종가가 크면 **매수**", key="offset_cl_buy", value=preset_values.get("offset_cl_buy", 25))
-        st.markdown("---") 
+        st.markdown("---")
         st.markdown("근데, 필요시 조건을 더 해")
         offset_compare_short = st.number_input("□일 전", key="offset_compare_short", value=preset_values.get("offset_compare_short", 1))
         ma_compare_short = st.number_input("□일 이동평균선보다 (0=비활성)", key="ma_compare_short", value=preset_values.get("ma_compare_short", 0))
         offset_compare_long = st.number_input("□일 전", key="offset_compare_long", value=preset_values.get("offset_compare_long", 1))
         ma_compare_long = st.number_input("□일 이동평균선이 커야 **매수**", key="ma_compare_long", value=preset_values.get("ma_compare_long", 0))
 
-    with col2:
+    with col_right:
         st.markdown("**📤 매도 조건**")
         offset_ma_sell = st.number_input("□일 전", key="offset_ma_sell", value=preset_values.get("offset_ma_sell", 1))
         ma_sell = st.number_input("□일 이동평균선보다", key="ma_sell", value=preset_values.get("ma_sell", 25))
@@ -208,6 +243,7 @@ with st.expander("📈 전략 조건 설정"):
 
         stop_loss_pct = st.number_input("손절 기준 (%)", key="stop_loss_pct", value=preset_values.get("stop_loss_pct", 0.0), step=0.5)
         take_profit_pct = st.number_input("익절 기준 (%)", key="take_profit_pct", value=preset_values.get("take_profit_pct", 0.0), step=0.5)
+        min_hold_days = st.number_input("매수 후 최소 보유일", key="min_hold_days", value=1, min_value=0, step=1)
 
     strategy_behavior = st.selectbox(
         "⚙️ 매수/매도 조건 동시 발생 시 행동",
@@ -218,6 +254,13 @@ with st.expander("📈 전략 조건 설정"):
         ]
     )
 
+with st.expander("⚙️ 체결/비용 & 기타 설정"):
+    initial_cash_ui = st.number_input("초기 자본", value=5_000_000, step=100_000)
+    fee_bps = st.number_input("거래수수료 (bps)", value=0, step=1)
+    slip_bps = st.number_input("슬리피지 (bps)", value=0, step=1)
+    seed = st.number_input("랜덤 시뮬 Seed (재현성)", value=0, step=1)
+    if seed:
+        random.seed(int(seed))
 
 # ✅ 시그널 체크
 if st.button("📌 오늘 시그널 체크"):
@@ -236,199 +279,230 @@ if st.button("📌 오늘 시그널 체크"):
             offset_compare_long=offset_compare_long
         )
 
-######### 주요 코드 [백테스트] #########
-def backtest_strategy_with_ma_compare(signal_ticker, trade_ticker,
-                                      ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
-                                      offset_cl_buy, offset_cl_sell,
-                                      ma_compare_short=None, ma_compare_long=None,
-                                      offset_compare_short=1, offset_compare_long=1,
-                                      initial_cash=5_000_000,
-                                      start_date=None, end_date=None,
-                                      min_days_between_trades=0,
-                                      stop_loss_pct=0.0,
-                                      take_profit_pct=0.0):
 
-    signal_df = get_data(signal_ticker, start_date, end_date)
-    trade_df = get_data(trade_ticker, start_date, end_date)
+######### 주요 코드 [백테스트] ###########
+# ===== Fast Backtest =====
 
-    if signal_df.empty or trade_df.empty:
-        st.warning("❗데이터가 부족합니다.")
+def backtest_fast(
+    base, x_sig, x_trd, ma_dict_sig,
+    ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
+    offset_cl_buy, offset_cl_sell,
+    ma_compare_short=None, ma_compare_long=None,
+    offset_compare_short=1, offset_compare_long=1,
+    initial_cash=5_000_000,
+    stop_loss_pct=0.0, take_profit_pct=0.0,
+    strategy_behavior="1. 포지션 없으면 매수 / 보유 중이면 매도",
+    min_hold_days=0,
+    fee_bps=0, slip_bps=0,
+):
+    n = len(base)
+    if n == 0:
         return {}
 
-    signal_df["MA_BUY"] = signal_df["Close"].rolling(ma_buy).mean()
-    signal_df["MA_SELL"] = signal_df["Close"].rolling(ma_sell).mean()
+    ma_buy_arr  = ma_dict_sig.get(ma_buy)
+    ma_sell_arr = ma_dict_sig.get(ma_sell)
+    ma_s_arr = ma_dict_sig.get(ma_compare_short) if ma_compare_short else None
+    ma_l_arr = ma_dict_sig.get(ma_compare_long)  if ma_compare_long  else None
 
-    if ma_compare_short and ma_compare_long:
-        signal_df["MA_SHORT"] = signal_df["Close"].rolling(ma_compare_short).mean()
-        signal_df["MA_LONG"] = signal_df["Close"].rolling(ma_compare_long).mean()
-    else:
-        signal_df["MA_SHORT"] = signal_df["MA_LONG"] = None
+    idx0 = max(
+        (ma_buy or 1), (ma_sell or 1),
+        offset_ma_buy, offset_ma_sell, offset_cl_buy, offset_cl_sell,
+        (offset_compare_short or 0), (offset_compare_long or 0)
+    )
 
-    cash = initial_cash
-    buy_price = None
+    # ===== 변수 =====
+    cash = float(initial_cash)
     position = 0.0
-    asset_curve = []
-    logs = []
+    buy_price = None
+    asset_curve, logs = [], []
+    sb = strategy_behavior[:1]
+    hold_days = 0
 
-    for i in range(max(ma_buy, ma_sell,
-                       offset_ma_buy, offset_ma_sell,
-                       offset_cl_buy, offset_cl_sell,
-                       offset_compare_short or 0, offset_compare_long or 0), len(signal_df)):
+    def _fill_buy(px: float) -> float:
+        return px * (1 + (slip_bps + fee_bps) / 10000.0)
 
-        cl_b = float(signal_df["Close"].iloc[i - offset_cl_buy])
-        ma_b = float(signal_df["MA_BUY"].iloc[i - offset_ma_buy])
-        cl_s = float(signal_df["Close"].iloc[i - offset_cl_sell])
-        ma_s = float(signal_df["MA_SELL"].iloc[i - offset_ma_sell])
-        close_today = float(trade_df["Close"].iloc[i])
-        current_date = trade_df["Date"].iloc[i]
+    def _fill_sell(px: float) -> float:
+        return px * (1 - (slip_bps + fee_bps) / 10000.0)
+
+    for i in range(idx0, n):
+        just_bought = False
+
+        # 값 가져오기 (iloc 금지, 배열 인덱싱)
+        try:
+            cl_b = float(x_sig[i - offset_cl_buy])
+            ma_b = float(ma_buy_arr[i - offset_ma_buy])
+            cl_s = float(x_sig[i - offset_cl_sell])
+            ma_s = float(ma_sell_arr[i - offset_ma_sell])
+        except Exception:
+            asset_curve.append(cash + position * x_trd[i] if position else cash)
+            continue
 
         trend_ok = True
-        if ma_compare_short and ma_compare_long:
-            ma_short = signal_df["MA_SHORT"].iloc[i - offset_compare_short]
-            ma_long = signal_df["MA_LONG"].iloc[i - offset_compare_long]
-            trend_ok = ma_short >= ma_long
+        if (ma_s_arr is not None) and (ma_l_arr is not None):
+            ms = ma_s_arr[i - offset_compare_short] if i - offset_compare_short >= 0 else np.nan
+            ml = ma_l_arr[i - offset_compare_long]  if i - offset_compare_long  >= 0 else np.nan
+            trend_ok = (np.isfinite(ms) and np.isfinite(ml) and ms >= ml)
 
-        profit_pct = (close_today - buy_price) / buy_price * 100 if buy_price else 0
+        close_today = x_trd[i]
+        profit_pct = ((close_today - buy_price) / buy_price * 100) if buy_price else 0.0
 
+        # ===== 조건 계산 =====
         signal = "HOLD"
 
-        buy_condition = cl_b > ma_b and trend_ok
-        sell_condition = cl_s < ma_s
-        stop_hit = stop_loss_pct > 0 and profit_pct <= -stop_loss_pct
-        take_hit = take_profit_pct > 0 and profit_pct >= take_profit_pct
+        buy_condition  = (cl_b > ma_b) and trend_ok
+        sell_condition = (cl_s < ma_s)
+        stop_hit = (stop_loss_pct > 0 and profit_pct <= -stop_loss_pct)
+        take_hit = (take_profit_pct > 0 and profit_pct >= take_profit_pct)
 
-        # ✅ 전략 1 / 2 / 3 분기 처리
-        if strategy_behavior.startswith("1"):
+        base_sell = (sell_condition or stop_hit or take_hit)
+        can_sell = (position > 0.0) and base_sell and (hold_days >= min_hold_days)
+        if stop_hit or take_hit:
+            can_sell = True
+
+        if sb == "1":
             if buy_condition and sell_condition:
-                if position == 0:
-                    position = cash / close_today
-                    cash = 0.0
-                    signal = "BUY"
-                    buy_price = close_today
+                if position == 0.0:
+                    fill = _fill_buy(close_today)
+                    position = cash / fill; cash = 0.0
+                    signal = "BUY"; buy_price = fill
+                    hold_days = 0; just_bought = True
                 else:
-                    cash = position * close_today
-                    position = 0.0
-                    signal = "SELL"
-                    buy_price = None
-            elif position == 0 and buy_condition:
-                position = cash / close_today
-                cash = 0.0
-                signal = "BUY"
-                buy_price = close_today
-            elif position > 0 and (sell_condition or stop_hit or take_hit):
-                cash = position * close_today
-                position = 0.0
-                signal = "SELL"
-                buy_price = None
+                    if hold_days >= min_hold_days:
+                        fill = _fill_sell(close_today)
+                        cash = position * fill; position = 0.0
+                        signal = "SELL"; buy_price = None
+                    else:
+                        signal = "HOLD"
 
-        elif strategy_behavior.startswith("2"):
+            elif position == 0.0 and buy_condition:
+                fill = _fill_buy(close_today)
+                position = cash / fill; cash = 0.0
+                signal = "BUY"; buy_price = fill
+                hold_days = 0; just_bought = True
+
+            elif can_sell:
+                fill = _fill_sell(close_today)
+                cash = position * fill; position = 0.0
+                signal = "SELL"; buy_price = None
+
+        elif sb == "2":
             if buy_condition and sell_condition:
-                if position == 0:
-                    position = cash / close_today
-                    cash = 0.0
-                    signal = "BUY"
-                    buy_price = close_today
+                if position == 0.0:
+                    fill = _fill_buy(close_today)
+                    position = cash / fill; cash = 0.0
+                    signal = "BUY"; buy_price = fill
+                    hold_days = 0; just_bought = True
                 else:
                     signal = "HOLD"
-            elif position == 0 and buy_condition:
-                position = cash / close_today
-                cash = 0.0
-                signal = "BUY"
-                buy_price = close_today
-            elif position > 0 and (sell_condition or stop_hit or take_hit):
-                cash = position * close_today
-                position = 0.0
-                signal = "SELL"
-                buy_price = None
+            elif position == 0.0 and buy_condition:
+                fill = _fill_buy(close_today)
+                position = cash / fill; cash = 0.0
+                signal = "BUY"; buy_price = fill
+                hold_days = 0; just_bought = True
+            elif can_sell:
+                fill = _fill_sell(close_today)
+                cash = position * fill; position = 0.0
+                signal = "SELL"; buy_price = None
 
-        elif strategy_behavior.startswith("3"):
+        else:  # '3'
             if buy_condition and sell_condition:
-                if position == 0:
-                    signal = "HOLD"  # 매수/매도 모두 만족, 포지션 없으면 HOLD
+                if position == 0.0:
+                    signal = "HOLD"
                 else:
-                    cash = position * close_today
-                    position = 0.0
-                    signal = "SELL"
-                    buy_price = None
+                    if hold_days >= min_hold_days:
+                        fill = _fill_sell(close_today)
+                        cash = position * fill; position = 0.0
+                        signal = "SELL"; buy_price = None
+                    else:
+                        signal = "HOLD"
+            elif buy_condition and position == 0.0:
+                fill = _fill_buy(close_today)
+                position = cash / fill; cash = 0.0
+                signal = "BUY"; buy_price = fill
+                hold_days = 0; just_bought = True
+            elif can_sell:
+                fill = _fill_sell(close_today)
+                cash = position * fill; position = 0.0
+                signal = "SELL"; buy_price = None
 
-            elif buy_condition and position == 0:
-                position = cash / close_today
-                cash = 0.0
-                signal = "BUY"
-                buy_price = close_today
+        # ✅ 체결 후 카운터 업데이트 (이중 증가 방지)
+        if position > 0.0:
+            if not just_bought:
+                hold_days += 1
+        else:
+            hold_days = 0
 
-            elif position > 0 and (sell_condition or stop_hit or take_hit):
-                cash = position * close_today
-                position = 0.0
-                signal = "SELL"
-                buy_price = None
-
-        total = cash + (position * close_today if position > 0 else 0)
+        total = cash + (position * close_today if position > 0.0 else 0.0)
         asset_curve.append(total)
 
         logs.append({
-            "날짜": current_date.strftime("%Y-%m-%d"),
+            "날짜": pd.to_datetime(base["Date"].iloc[i]).strftime("%Y-%m-%d"),
             "종가": round(close_today, 2),
             "신호": signal,
             "자산": round(total),
             "매수시그널": buy_condition,
             "매도시그널": sell_condition,
-            "매수이유": (
-                f"종가({cl_b:.2f}) > MA_BUY({ma_b:.2f})"
-                + (f" + 추세필터 통과" if trend_ok else " + 추세필터 불통과")
-                if buy_condition else ""
-            ),
-            "매도이유": (
-                f"종가({cl_s:.2f}) < MA_SELL({ma_s:.2f})"
-                if sell_condition else ""
-            ),
-            "양시그널": buy_condition and sell_condition 
+            "손절발동": bool(stop_hit),
+            "익절발동": bool(take_hit),
+            "추세만족": bool(trend_ok),
+            "매수가격비교": round(cl_b - ma_b, 6),   # (+면 종가>MA)
+            "매도가격비교": round(cl_s - ma_s, 6),   # (-면 종가<MA)
+            "매수이유": (f"종가({cl_b:.2f}) > MA_BUY({ma_b:.2f})" + (" + 추세필터 통과" if trend_ok else " + 추세필터 불통과")) if buy_condition else "",
+            "매도이유": (f"종가({cl_s:.2f}) < MA_SELL({ma_s:.2f})") if sell_condition else "",
+            "양시그널": buy_condition and sell_condition,
+            "보유일": hold_days
         })
 
+    if not asset_curve:
+        return {}
 
-    df = trade_df.iloc[-len(asset_curve):].copy()
-    df["Asset"] = asset_curve
-    mdd = get_mdd(df["Asset"])
-    peak = df["Asset"].cummax()
-    drawdown = df["Asset"] / peak - 1
-    mdd_pos = drawdown.values.argmin()
-    mdd_date = df["Date"].iloc[mdd_pos]
+    df = pd.DataFrame({"Date": base["Date"].iloc[-len(asset_curve):].values, "Asset": asset_curve})
+    mdd_series = pd.Series(asset_curve)
+    peak = mdd_series.cummax()
+    drawdown = mdd_series / peak - 1.0
+    mdd = float(drawdown.min() * 100)
+
+    mdd_pos = int(np.argmin(drawdown.values))
+    mdd_date = pd.to_datetime(df["Date"].iloc[mdd_pos])
 
     recovery_date = None
-    for i in range(mdd_pos, len(df)):
-        if df["Asset"].iloc[i] >= peak.iloc[mdd_pos]:
-            recovery_date = df["Date"].iloc[i]
+    for j in range(mdd_pos, len(df)):
+        if df["Asset"].iloc[j] >= peak.iloc[mdd_pos]:
+            recovery_date = pd.to_datetime(df["Date"].iloc[j])
             break
 
-    trade_pairs = []
-    current_buy = None
+    # 승률
+    trade_pairs, cache_buy = [], None
     for log in logs:
         if log["신호"] == "BUY":
-            current_buy = log
-        elif log["신호"] == "SELL" and current_buy:
-            trade_pairs.append((current_buy, log))
-            current_buy = None
-
-    win_trades = sum(1 for buy, sell in trade_pairs if sell["종가"] > buy["종가"])
+            cache_buy = log
+        elif log["신호"] == "SELL" and cache_buy:
+            trade_pairs.append((cache_buy, log))
+            cache_buy = None
+    wins = sum(1 for b, s in trade_pairs if s["종가"] > b["종가"])
     total_trades = len(trade_pairs)
-    win_rate = round((win_trades / total_trades) * 100, 2) if total_trades > 0 else 0
+    win_rate = round((wins / total_trades) * 100, 2) if total_trades else 0.0
+
+    initial_cash_val = float(initial_cash)
+    final_asset = float(asset_curve[-1])
 
     return {
-        "최종 자산": round(asset_curve[-1]),
-        "수익률 (%)": round((asset_curve[-1] - initial_cash) / initial_cash * 100, 2),
+        "최종 자산": round(final_asset),
+        "수익률 (%)": round((final_asset - initial_cash_val) / initial_cash_val * 100, 2),
         "승률 (%)": win_rate,
         "MDD (%)": round(mdd, 2),
         "MDD 발생일": mdd_date.strftime("%Y-%m-%d"),
-        "MDD 회복일": recovery_date.strftime("%Y-%m-%d") if recovery_date else "미회복",
-        "회복 기간 (일)": (recovery_date - mdd_date).days if recovery_date else None,
+        "MDD 회복일": recovery_date.strftime("%Y-%m-%d") if recovery_date is not None else "미회복",
+        "회복 기간 (일)": (recovery_date - mdd_date).days if recovery_date is not None else None,
         "총 매매 횟수": total_trades,
         "매매 로그": logs
     }
 
-def run_random_simulations(n_simulations=30):
+
+# ===== Fast Random Sims =====
+def run_random_simulations_fast(n_simulations, base, x_sig, x_trd, ma_dict_sig):
     results = []
     for _ in range(n_simulations):
-        # 랜덤 파라미터 생성
         ma_buy = random.choice([5, 10, 15, 25, 50])
         offset_ma_buy = random.choice([1, 5, 15, 25])
         offset_cl_buy = random.choice([1, 5, 15, 25])
@@ -437,86 +511,112 @@ def run_random_simulations(n_simulations=30):
         offset_ma_sell = random.choice([1, 5, 15, 25])
         offset_cl_sell = random.choice([1, 5, 15, 25])
 
-        ma_compare_short = random.choice([0, 5, 15, 25, 50])
-        ma_compare_long = random.choice([0, 5, 15, 25, 50])
-        offset_compare_short = random.choice([1, 5, 15, 25, 50])
-        offset_compare_long = 1
+        # ✅ 0을 섞어서 None 활성화
+        mcs = random.choice([0, 1, 5, 15, 25])
+        ma_compare_short = None if mcs == 0 else mcs
+        ma_compare_long  = random.choice([1, 5, 15, 25])
+        offset_compare_short = random.choice([1, 15, 25])
+        offset_compare_long  = random.choice([1, 15, 25])
 
-        stop_loss_pct = random.choice([0, 10])
+        stop_loss_pct = random.choice([0])
         take_profit_pct = random.choice([0, 10, 25, 50])
 
-        result = backtest_strategy_with_ma_compare(
-            signal_ticker=signal_ticker,
-            trade_ticker=trade_ticker,
-            ma_buy=ma_buy,
-            offset_ma_buy=offset_ma_buy,
-            ma_sell=ma_sell,
-            offset_ma_sell=offset_ma_sell,
-            offset_cl_buy=offset_cl_buy,
-            offset_cl_sell=offset_cl_sell,
-            ma_compare_short=ma_compare_short if ma_compare_short > 0 else None,
-            ma_compare_long=ma_compare_long if ma_compare_long > 0 else None,
-            offset_compare_short=offset_compare_short,
-            offset_compare_long=offset_compare_long,
-            stop_loss_pct=stop_loss_pct,
-            take_profit_pct=take_profit_pct,
-            start_date=start_date,
-            end_date=end_date
-        )
+        # 필요한 MA가 dict에 없으면 즉석 계산해서 추가(재사용)
+        for w in [ma_buy, ma_sell, ma_compare_short, ma_compare_long]:
+            if w and w not in ma_dict_sig:
+                ma_dict_sig[w] = _fast_ma(x_sig, w)
 
-        if result:
-            result_clean = {k: v for k, v in result.items() if k != "매매 로그"}
-            results.append({
-                **result_clean,
-                "ma_buy": ma_buy,
-	    "offset_ma_buy": offset_ma_buy,
-                "ma_sell": ma_sell,
-	    "offset_ma_sell": offset_ma_sell,
-                "offset_cl_buy": offset_cl_buy,
-                "offset_cl_sell": offset_cl_sell,
-                "ma_compare_short": ma_compare_short if ma_compare_short > 0 else None,
-                "ma_compare_long": ma_compare_long if ma_compare_long > 0 else None,
-                "offset_compare_short": offset_compare_short,
-                "offset_compare_long": offset_compare_long,
-                "stop_loss": stop_loss_pct,
-                "take_profit": take_profit_pct,
-                "승률": result["승률 (%)"],
-                "수익률": result["수익률 (%)"]
-            })
+        r = backtest_fast(
+            base, x_sig, x_trd, ma_dict_sig,
+            ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
+            offset_cl_buy, offset_cl_sell,
+            ma_compare_short, ma_compare_long,
+            offset_compare_short, offset_compare_long,
+            stop_loss_pct=stop_loss_pct, take_profit_pct=take_profit_pct
+        )
+        if not r:
+            continue
+
+        result_clean = {k: v for k, v in r.items() if k != "매매 로그"}
+        results.append({
+            **result_clean,
+            "ma_buy": ma_buy, "offset_ma_buy": offset_ma_buy,
+            "ma_sell": ma_sell, "offset_ma_sell": offset_ma_sell,
+            "offset_cl_buy": offset_cl_buy, "offset_cl_sell": offset_cl_sell,
+            "ma_compare_short": ma_compare_short, "ma_compare_long": ma_compare_long,
+            "offset_compare_short": offset_compare_short, "offset_compare_long": offset_compare_long,
+            "stop_loss": stop_loss_pct, "take_profit": take_profit_pct,
+            "승률": r["승률 (%)"], "수익률": r["수익률 (%)"]
+        })
     return pd.DataFrame(results)
 
 
 # ✅ UI 버튼 및 시각화
 if st.button("✅ 백테스트 실행"):
-    result = backtest_strategy_with_ma_compare(
-        signal_ticker=signal_ticker,
-        trade_ticker=trade_ticker,
-        ma_buy=ma_buy,
-        offset_ma_buy=offset_ma_buy,
-        ma_sell=ma_sell,
-        offset_ma_sell=offset_ma_sell,
-        offset_cl_buy=offset_cl_buy,
-        offset_cl_sell=offset_cl_sell,
-        ma_compare_short=ma_compare_short if ma_compare_short > 0 else None,
-        ma_compare_long=ma_compare_long if ma_compare_long > 0 else None,
-        offset_compare_short=offset_compare_short,
-        offset_compare_long=offset_compare_long,
-        start_date=start_date,
-        end_date=end_date,
-        stop_loss_pct=stop_loss_pct,
-        take_profit_pct=take_profit_pct
+    # 1) 이번 실행에 필요한 MA 윈도우 풀 구성
+    ma_pool = [ma_buy, ma_sell]
+    if (ma_compare_short or 0) > 0: ma_pool.append(ma_compare_short)
+    if (ma_compare_long  or 0) > 0: ma_pool.append(ma_compare_long)
+
+    # 2) 기준 DF + MA 사전계산
+    base, x_sig, x_trd, ma_dict_sig = prepare_base(
+        signal_ticker, trade_ticker, start_date, end_date, ma_pool
+    )
+
+    # 3) 백테스트 실행
+    result = backtest_fast(
+        base, x_sig, x_trd, ma_dict_sig,
+        ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
+        offset_cl_buy, offset_cl_sell,
+        ma_compare_short if (ma_compare_short or 0) > 0 else None,
+        ma_compare_long  if (ma_compare_long  or 0) > 0 else None,
+        offset_compare_short, offset_compare_long,
+        initial_cash=initial_cash_ui,
+        stop_loss_pct=stop_loss_pct, take_profit_pct=take_profit_pct,
+        min_hold_days=min_hold_days,
+        strategy_behavior=strategy_behavior,
+        fee_bps=fee_bps, slip_bps=slip_bps
     )
 
     if result:
         st.subheader("📊 백테스트 결과 요약")
-        st.json({k: v for k, v in result.items() if k != "매매 로그"})
+        summary = {k: v for k, v in result.items() if k != "매매 로그"}
+        st.json(summary)
 
         df_log = pd.DataFrame(result["매매 로그"])
         df_log["날짜"] = pd.to_datetime(df_log["날짜"])
         df_log.set_index("날짜", inplace=True)
 
-############# 그래프 그리기 ###########
+        # ===== 성과지표 보강 (연율화/샤프/벤치마크)
+        eq = df_log["자산"].pct_change().dropna()
+        if not eq.empty:
+            ann_ret = (1 + eq.mean()) ** 252 - 1
+            ann_vol = eq.std() * (252 ** 0.5)
+            sharpe = (ann_ret / ann_vol) if ann_vol > 0 else 0.0
+        else:
+            ann_ret = ann_vol = sharpe = 0.0
+
+        st.write({
+            "연율화 수익률(%)": round(ann_ret * 100, 2),
+            "연율화 변동성(%)": round(ann_vol * 100, 2),
+            "샤프": round(sharpe, 2),
+        })
+
+        # ===== 그래프 그리기 =====
         fig = go.Figure()
+
+        # 벤치마크 (Buy&Hold)
+        bench = initial_cash_ui * (df_log["종가"] / df_log["종가"].iloc[0])
+        bh_ret = round((bench.iloc[-1] - initial_cash_ui) / initial_cash_ui * 100, 2)
+
+        fig.add_trace(go.Scatter(
+            x=df_log.index,
+            y=bench,
+            mode="lines",
+            name="Benchmark",
+            yaxis="y1",
+            line=dict(dash="dot")
+        ))
 
         # 자산 곡선 (왼쪽 y축)
         fig.add_trace(go.Scatter(
@@ -525,6 +625,23 @@ if st.button("✅ 백테스트 실행"):
             mode="lines",
             name="Asset",
             yaxis="y1"
+        ))
+
+        # 보유 구간 배경 음영
+        pos_step = df_log["신호"].map({"BUY": 1, "SELL": -1}).fillna(0).cumsum()
+        in_pos = pos_step > 0
+        pos_asset = df_log["자산"].where(in_pos)
+        fig.add_trace(go.Scatter(
+            x=df_log.index,
+            y=pos_asset,
+            mode="lines",
+            name="In-Position",
+            yaxis="y1",
+            line=dict(width=0),
+            fill="tozeroy",
+            fillcolor="rgba(0,150,0,0.08)",
+            hoverinfo="skip",
+            showlegend=False
         ))
 
         # 종가 (오른쪽 y축)
@@ -602,9 +719,23 @@ if st.button("✅ 백테스트 실행"):
             )
         ))
 
+        # 손절/익절 마커 (자산 축)
+        sl = df_log[df_log["손절발동"] == True]
+        tp = df_log[df_log["익절발동"] == True]
+        if not sl.empty:
+            fig.add_trace(go.Scatter(
+                x=sl.index, y=sl["자산"], mode="markers", name="손절",
+                yaxis="y1", marker=dict(symbol="x", size=9)
+            ))
+        if not tp.empty:
+            fig.add_trace(go.Scatter(
+                x=tp.index, y=tp["자산"], mode="markers", name="익절",
+                yaxis="y1", marker=dict(symbol="star", size=10)
+            ))
+
         # 레이아웃 설정
         fig.update_layout(
-            title="📈 자산 & 종가 흐름 (BUY/SELL 시점 포함)",
+            title=f"📈 자산 & 종가 흐름 (BUY/SELL 시점 포함) — 벤치마크 수익률 {bh_ret}%",
             yaxis=dict(title="Asset"),
             yaxis2=dict(title="Price", overlaying="y", side="right"),
             hovermode="x unified",
@@ -613,15 +744,43 @@ if st.button("✅ 백테스트 실행"):
 
         st.plotly_chart(fig, use_container_width=True)
 
-#############
+        # ===== 트레이드 페어 요약 =====
+        pairs, buy_cache = [], None
+        for _, r in df_log.reset_index().iterrows():
+            if r["신호"] == "BUY":
+                buy_cache = r
+            elif r["신호"] == "SELL" and buy_cache is not None:
+                pnl = (r["종가"] - buy_cache["종가"]) / buy_cache["종가"] * 100
+                pairs.append({
+                    "진입일": buy_cache["날짜"],
+                    "청산일": r["날짜"],
+                    "진입가": buy_cache["종가"],
+                    "청산가": r["종가"],
+                    "보유일": r["보유일"],
+                    "수익률(%)": round(pnl, 2),
+                    "청산이유": "손절" if r["손절발동"] else ("익절" if r["익절발동"] else "규칙매도")
+                })
+                buy_cache = None
+
+        if pairs:
+            st.subheader("🧾 트레이드 요약")
+            st.dataframe(pd.DataFrame(pairs))
+
+        # 다운로드 버튼 (로그)
         with st.expander("🧾 매매 로그"):
             st.dataframe(df_log)
-
-        # 다운로드 버튼
         csv = df_log.reset_index().to_csv(index=False).encode("utf-8-sig")
         st.download_button("⬇️ 백테스트 결과 다운로드 (CSV)", data=csv, file_name="backtest_result.csv", mime="text/csv")
 
-if st.button("🧪 랜덤 전략 시뮬레이션 (50회 실행)"):
-    df_sim = run_random_simulations(50)
+
+if st.button("🧪 랜덤 전략 시뮬레이션 (30회 실행)"):
+    # 랜덤 가능성 있는 MA 윈도우 풀
+    ma_pool = [5, 10, 15, 25, 50]
+    base, x_sig, x_trd, ma_dict_sig = prepare_base(
+        signal_ticker, trade_ticker, start_date, end_date, ma_pool
+    )
+    if seed:
+        random.seed(int(seed))
+    df_sim = run_random_simulations_fast(30, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률", ascending=False).reset_index(drop=True))
