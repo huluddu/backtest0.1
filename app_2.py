@@ -245,7 +245,7 @@ with st.expander("📈 전략 조건 설정"):
         ma_sell = st.number_input("□일 이동평균선", key="ma_sell", value=preset_values.get("ma_sell", 25))
         stop_loss_pct = st.number_input("손절 기준 (%)", key="stop_loss_pct", value=preset_values.get("stop_loss_pct", 0.0), step=0.5)
         take_profit_pct = st.number_input("익절 기준 (%)", key="take_profit_pct", value=preset_values.get("take_profit_pct", 0.0), step=0.5)
-        min_hold_days = st.number_input("매수 후 최소 보유일", key="min_hold_days", value=1, min_value=0, step=1)
+        min_hold_days = st.number_input("매수 후 최소 보유일", key="min_hold_days", value=0, min_value=0, step=1)
 
     strategy_behavior = st.selectbox(
         "⚙️ 매수/매도 조건 동시 발생 시 행동",
@@ -258,7 +258,7 @@ with st.expander("📈 전략 조건 설정"):
 
 with st.expander("⚙️ 체결/비용 & 기타 설정"):
     initial_cash_ui = st.number_input("초기 자본", value=5_000_000, step=100_000)
-    fee_bps = st.number_input("거래수수료 (bps)", value=0, step=1)
+    fee_bps = st.number_input("거래수수료 (bps)", value=25, step=1)
     slip_bps = st.number_input("슬리피지 (bps)", value=0, step=1)
     seed = st.number_input("랜덤 시뮬 Seed (재현성)", value=0, step=1)
     if seed:
@@ -530,7 +530,7 @@ def run_random_simulations_fast(n_simulations, base, x_sig, x_trd, ma_dict_sig):
         offset_compare_long  = random.choice([1, 15, 25])
 
         stop_loss_pct = random.choice([0])
-        take_profit_pct = random.choice([0, 10, 25, 50])
+        take_profit_pct = random.choice([0])
 
         # 필요한 MA가 dict에 없으면 즉석 계산해서 추가(재사용)
         for w in [ma_buy, ma_sell, ma_compare_short, ma_compare_long]:
@@ -608,7 +608,7 @@ if st.button("✅ 백테스트 실행"):
             ann_ret = ann_vol = sharpe = 0.0
 
         st.write({
-            "연율화 수익률(%)": round(ann_ret * 100, 2),
+            "연율화 수익률 CAGR(%)": round(ann_ret * 100, 2),
             "연율화 변동성(%)": round(ann_vol * 100, 2),
             "샤프": round(sharpe, 2),
         })
@@ -795,6 +795,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (30회 실행)"):
     df_sim = run_random_simulations_fast(30, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률", ascending=False).reset_index(drop=True))
+
 
 
 
