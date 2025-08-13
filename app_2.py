@@ -587,7 +587,7 @@ if st.button("✅ 백테스트 실행"):
         min_hold_days=min_hold_days,
         strategy_behavior=strategy_behavior,
         buy_operator=buy_operator,
-        sell_operator=sell_operator
+        sell_operator=sell_operator,
         fee_bps=fee_bps, slip_bps=slip_bps
     )
 
@@ -797,4 +797,5 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (30회 실행)"):
     df_sim = run_random_simulations_fast(30, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률", ascending=False).reset_index(drop=True))
+
 
