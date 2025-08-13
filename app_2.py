@@ -225,9 +225,11 @@ with st.expander("📈 전략 조건 설정"):
 
     with col_left:
         st.markdown("**📥 매수 조건**")
+        offset_cl_buy = st.number_input("□일 전 종가", key="offset_cl_buy", value=preset_values.get("offset_cl_buy", 25))
+        buy_operator = st.selectbox("매수 조건 부호", [">", "<"], index=0)
         offset_ma_buy = st.number_input("□일 전", key="offset_ma_buy", value=preset_values.get("offset_ma_buy", 1))
-        ma_buy = st.number_input("□일 이동평균선보다", key="ma_buy", value=preset_values.get("ma_buy", 25))
-        offset_cl_buy = st.number_input("□일 전 종가가 크면 **매수**", key="offset_cl_buy", value=preset_values.get("offset_cl_buy", 25))
+        ma_buy = st.number_input("□일 이동평균선", key="ma_buy", value=preset_values.get("ma_buy", 25))
+   
         st.markdown("---")
         st.markdown("근데, 필요시 조건을 더 해")
         offset_compare_short = st.number_input("□일 전", key="offset_compare_short", value=preset_values.get("offset_compare_short", 1))
@@ -237,10 +239,10 @@ with st.expander("📈 전략 조건 설정"):
 
     with col_right:
         st.markdown("**📤 매도 조건**")
+        offset_cl_sell = st.number_input("□일 전 종가", key="offset_cl_sell", value=preset_values.get("offset_cl_sell", 1))
+        sell_operator = st.selectbox("매도 조건 부호", ["<", ">"], index=0)
         offset_ma_sell = st.number_input("□일 전", key="offset_ma_sell", value=preset_values.get("offset_ma_sell", 1))
-        ma_sell = st.number_input("□일 이동평균선보다", key="ma_sell", value=preset_values.get("ma_sell", 25))
-        offset_cl_sell = st.number_input("□일 전 종가가 작으면 매도", key="offset_cl_sell", value=preset_values.get("offset_cl_sell", 1))
-
+        ma_sell = st.number_input("□일 이동평균선", key="ma_sell", value=preset_values.get("ma_sell", 25))
         stop_loss_pct = st.number_input("손절 기준 (%)", key="stop_loss_pct", value=preset_values.get("stop_loss_pct", 0.0), step=0.5)
         take_profit_pct = st.number_input("익절 기준 (%)", key="take_profit_pct", value=preset_values.get("take_profit_pct", 0.0), step=0.5)
         min_hold_days = st.number_input("매수 후 최소 보유일", key="min_hold_days", value=1, min_value=0, step=1)
@@ -349,8 +351,17 @@ def backtest_fast(
         # ===== 조건 계산 =====
         signal = "HOLD"
 
-        buy_condition  = (cl_b > ma_b) and trend_ok
-        sell_condition = (cl_s < ma_s)
+
+        if buy_operator == ">":
+            buy_condition = (cl_b > ma_b) and trend_ok
+        else:
+            buy_condition = (cl_b < ma_b) and trend_ok
+
+        if sell_operator == "<":
+            sell_condition = (cl_s < ma_s)
+        else:
+            sell_condition = (cl_s > ma_s)
+        
         stop_hit = (stop_loss_pct > 0 and profit_pct <= -stop_loss_pct)
         take_hit = (take_profit_pct > 0 and profit_pct >= take_profit_pct)
 
@@ -575,6 +586,8 @@ if st.button("✅ 백테스트 실행"):
         stop_loss_pct=stop_loss_pct, take_profit_pct=take_profit_pct,
         min_hold_days=min_hold_days,
         strategy_behavior=strategy_behavior,
+        buy_operator=buy_operator,
+        sell_operator=sell_operator
         fee_bps=fee_bps, slip_bps=slip_bps
     )
 
@@ -784,3 +797,4 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (30회 실행)"):
     df_sim = run_random_simulations_fast(30, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률", ascending=False).reset_index(drop=True))
+
