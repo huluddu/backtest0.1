@@ -787,7 +787,7 @@ if st.button("✅ 백테스트 실행"):
 
 if st.button("🧪 랜덤 전략 시뮬레이션 (40회 실행)"):
     # 랜덤 가능성 있는 MA 윈도우 풀
-    # ma_pool = [5, 10, 15, 25, 50]
+    ma_pool = [5, 10, 15, 25, 50]
     base, x_sig, x_trd, ma_dict_sig = prepare_base(
         signal_ticker, trade_ticker, start_date, end_date, ma_pool
     )
@@ -796,6 +796,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (40회 실행)"):
     df_sim = run_random_simulations_fast(40, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률", ascending=False).reset_index(drop=True))
+
 
 
 
