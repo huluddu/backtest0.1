@@ -531,7 +531,7 @@ def run_random_simulations_fast(n_simulations, base, x_sig, x_trd, ma_dict_sig):
         offset_compare_long  = random.choice([1, 15, 25])
 
         stop_loss_pct = random.choice([0])
-        take_profit_pct = random.choice([0])
+        take_profit_pct = random.choice([0,25,50])
 
         # 필요한 MA가 dict에 없으면 즉석 계산해서 추가(재사용)
         for w in [ma_buy, ma_sell, ma_compare_short, ma_compare_long]:
@@ -785,17 +785,18 @@ if st.button("✅ 백테스트 실행"):
         st.download_button("⬇️ 백테스트 결과 다운로드 (CSV)", data=csv, file_name="backtest_result.csv", mime="text/csv")
 
 
-if st.button("🧪 랜덤 전략 시뮬레이션 (30회 실행)"):
+if st.button("🧪 랜덤 전략 시뮬레이션 (40회 실행)"):
     # 랜덤 가능성 있는 MA 윈도우 풀
-    ma_pool = [5, 10, 15, 25, 50]
+    # ma_pool = [5, 10, 15, 25, 50]
     base, x_sig, x_trd, ma_dict_sig = prepare_base(
         signal_ticker, trade_ticker, start_date, end_date, ma_pool
     )
     if seed:
         random.seed(int(seed))
-    df_sim = run_random_simulations_fast(30, base, x_sig, x_trd, ma_dict_sig)
+    df_sim = run_random_simulations_fast(40, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률", ascending=False).reset_index(drop=True))
+
 
 
 
