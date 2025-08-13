@@ -517,6 +517,7 @@ def run_random_simulations_fast(n_simulations, base, x_sig, x_trd, ma_dict_sig):
         ma_buy = random.choice([5, 10, 15, 25, 50])
         offset_ma_buy = random.choice([1, 5, 15, 25])
         offset_cl_buy = random.choice([1, 5, 15, 25])
+        buy_operator = random.choice("<",">")
 
         ma_sell = random.choice([5, 10, 15, 25])
         offset_ma_sell = random.choice([1, 5, 15, 25])
@@ -551,7 +552,7 @@ def run_random_simulations_fast(n_simulations, base, x_sig, x_trd, ma_dict_sig):
         result_clean = {k: v for k, v in r.items() if k != "매매 로그"}
         results.append({
             **result_clean,
-            "ma_buy": ma_buy, "offset_ma_buy": offset_ma_buy,
+            "ma_buy": ma_buy, "offset_ma_buy": offset_ma_buy, "buy_operator": buy_operator,
             "ma_sell": ma_sell, "offset_ma_sell": offset_ma_sell,
             "offset_cl_buy": offset_cl_buy, "offset_cl_sell": offset_cl_sell,
             "ma_compare_short": ma_compare_short, "ma_compare_long": ma_compare_long,
@@ -795,6 +796,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (30회 실행)"):
     df_sim = run_random_simulations_fast(30, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률", ascending=False).reset_index(drop=True))
+
 
 
 
