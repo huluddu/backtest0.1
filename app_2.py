@@ -497,16 +497,42 @@ def backtest_fast(
     initial_cash_val = float(initial_cash)
     final_asset = float(asset_curve[-1])
 
+        # ---- 거래당 수익률/Profit Factor 계산 추가 ----
+    trade_returns = []   # 각 거래의 수익률(소수, 예: 0.0123 = 1.23%)
+    gross_profit = 0.0   # 수익 거래들의 수익률 합
+    gross_loss = 0.0     # 손실 거래들의 손실률 합(양수로 누적)
+
+    for b, s in trade_pairs:
+        r = (s["종가"] - b["종가"]) / b["종가"]
+        trade_returns.append(r)
+        if r >= 0:
+            gross_profit += r
+        else:
+            gross_loss += (-r)
+
+    avg_trade_return_pct = round((np.mean(trade_returns) * 100), 2) if trade_returns else 0.0
+    median_trade_return_pct = round((np.median(trade_returns) * 100), 2) if trade_returns else 0.0
+    profit_factor = round((gross_profit / gross_loss), 2) if gross_loss > 0 else (float("inf") if gross_profit > 0 else 0.0)
+    
+
+
+
+
+    
+
     return {
-        "최종 자산": round(final_asset),
+        "평균 거래당 수익률 (%)": avg_trade_return_pct,
         "수익률 (%)": round((final_asset - initial_cash_val) / initial_cash_val * 100, 2),
         "승률 (%)": win_rate,
         "MDD (%)": round(mdd, 2),
+        "중앙값 거래당 수익률 (%)": median_trade_return_pct,
+        "Profit Factor": profit_factor,
         "MDD 발생일": mdd_date.strftime("%Y-%m-%d"),
         "MDD 회복일": recovery_date.strftime("%Y-%m-%d") if recovery_date is not None else "미회복",
         "회복 기간 (일)": (recovery_date - mdd_date).days if recovery_date is not None else None,
         "총 매매 횟수": total_trades,
-        "매매 로그": logs
+        "매매 로그": logs,
+        "최종 자산": round(final_asset)
     }
 
 
@@ -526,7 +552,7 @@ def run_random_simulations_fast(n_simulations, base, x_sig, x_trd, ma_dict_sig):
         # ✅ 0을 섞어서 None 활성화
         mcs = random.choice([0, 1, 5, 15, 25])
         ma_compare_short = None if mcs == 0 else mcs
-        ma_compare_long  = random.choice([1, 5, 15, 25])
+        ma_compare_long  = ma_compare_long
         offset_compare_short = random.choice([1, 15, 25])
         offset_compare_long  = random.choice([1, 15, 25])
 
@@ -558,7 +584,9 @@ def run_random_simulations_fast(n_simulations, base, x_sig, x_trd, ma_dict_sig):
             "ma_compare_short": ma_compare_short, "ma_compare_long": ma_compare_long,
             "offset_compare_short": offset_compare_short, "offset_compare_long": offset_compare_long,
             "stop_loss": stop_loss_pct, "take_profit": take_profit_pct,
-            "승률": r["승률 (%)"], "수익률": r["수익률 (%)"]
+            "승률": r["승률 (%)"], "수익률": r["수익률 (%)"],"평균 거래당 수익률": r.get("평균 거래당 수익률 (%)", 0.0),
+            "중앙값 거래당 수익률": r.get("중앙값 거래당 수익률 (%)", 0.0),
+            "ProfitFactor": r.get("Profit Factor", 0.0),
         })
     return pd.DataFrame(results)
 
@@ -796,6 +824,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (40회 실행)"):
     df_sim = run_random_simulations_fast(40, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률", ascending=False).reset_index(drop=True))
+
 
 
 
