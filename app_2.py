@@ -638,6 +638,8 @@ if st.button("✅ 백테스트 실행"):
 
         st.write({
             "연율화 수익률 CAGR(%)": round(ann_ret * 100, 2),
+            "평균 거래당 수익률(%)": result.get("평균 거래당 수익률 (%)", 0.0),
+            "ProfitFactor": result.get("Profit Factor", 0.0),
             "연율화 변동성(%)": round(ann_vol * 100, 2),
             "샤프": round(sharpe, 2),
         })
@@ -824,6 +826,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (40회 실행)"):
     df_sim = run_random_simulations_fast(40, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률", ascending=False).reset_index(drop=True))
+
 
 
 
