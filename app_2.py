@@ -552,7 +552,7 @@ def run_random_simulations_fast(n_simulations, base, x_sig, x_trd, ma_dict_sig):
         # ✅ 0을 섞어서 None 활성화
         mcs = random.choice([0, 1, 5, 15, 25])
         ma_compare_short = None if mcs == 0 else mcs
-        ma_compare_long  = ma_compare_long
+        ma_compare_long  = ma_compare_short
         offset_compare_short = random.choice([1, 15, 25])
         offset_compare_long  = random.choice([1, 15, 25])
 
@@ -826,6 +826,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (40회 실행)"):
     df_sim = run_random_simulations_fast(40, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률", ascending=False).reset_index(drop=True))
+
 
 
 
