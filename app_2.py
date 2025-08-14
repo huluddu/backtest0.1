@@ -296,6 +296,7 @@ def backtest_fast(
     strategy_behavior="1. 포지션 없으면 매수 / 보유 중이면 매도",
     min_hold_days=0,
     fee_bps=0, slip_bps=0,
+    buy_operator=">", sell_operator="<"
 ):
     n = len(base)
     if n == 0:
@@ -358,9 +359,9 @@ def backtest_fast(
             buy_condition = (cl_b < ma_b) and trend_ok
 
         if sell_operator == "<":
-            sell_condition = (cl_s < ma_s)
+            sell_condition = (cl_s < ma_s) and not trend_ok
         else:
-            sell_condition = (cl_s > ma_s)
+            sell_condition = (cl_s > ma_s) and not trend_ok
         
         stop_hit = (stop_loss_pct > 0 and profit_pct <= -stop_loss_pct)
         take_hit = (take_profit_pct > 0 and profit_pct >= take_profit_pct)
@@ -514,12 +515,6 @@ def backtest_fast(
     median_trade_return_pct = round((np.median(trade_returns) * 100), 2) if trade_returns else 0.0
     profit_factor = round((gross_profit / gross_loss), 2) if gross_loss > 0 else (float("inf") if gross_profit > 0 else 0.0)
     
-
-
-
-
-    
-
     return {
         "평균 거래당 수익률 (%)": avg_trade_return_pct,
         "수익률 (%)": round((final_asset - initial_cash_val) / initial_cash_val * 100, 2),
@@ -537,29 +532,33 @@ def backtest_fast(
 
 
 # ===== Fast Random Sims =====
-def run_random_simulations_fast(n_simulations, base, x_sig, x_trd, ma_dict_sig):
+def run_random_simulations_fast(
+    n_simulations, base, x_sig, x_trd, ma_dict_sig,
+    initial_cash=5_000_000, fee_bps=25, slip_bps=0,
+    randomize_sell_operator=False  # 필요 시 True로
+):
     results = []
     for _ in range(n_simulations):
         ma_buy = random.choice([5, 10, 15, 25, 50])
         offset_ma_buy = random.choice([1, 5, 15, 25])
         offset_cl_buy = random.choice([1, 5, 15, 25])
-        buy_operator = random.choice(["<",">"])
+        buy_operator = random.choice([">", "<"])
 
         ma_sell = random.choice([5, 10, 15, 25])
         offset_ma_sell = random.choice([1, 5, 15, 25])
         offset_cl_sell = random.choice([1, 5, 15, 25])
+        sell_operator = random.choice(["<", ">"]) if randomize_sell_operator else "<"
 
-        # ✅ 0을 섞어서 None 활성화
         mcs = random.choice([0, 1, 5, 15, 25])
         ma_compare_short = None if mcs == 0 else mcs
         ma_compare_long  = ma_compare_short
         offset_compare_short = random.choice([1, 15, 25])
-        offset_compare_long  = random.choice([1, 15, 25])
+        offset_compare_long  = random.choice([1])
 
-        stop_loss_pct = random.choice([0])
-        take_profit_pct = random.choice([0,25,50])
+        stop_loss_pct = 0
+        take_profit_pct = random.choice([0, 25, 50])
 
-        # 필요한 MA가 dict에 없으면 즉석 계산해서 추가(재사용)
+        # 필요한 MA 즉석 보충
         for w in [ma_buy, ma_sell, ma_compare_short, ma_compare_long]:
             if w and w not in ma_dict_sig:
                 ma_dict_sig[w] = _fast_ma(x_sig, w)
@@ -570,23 +569,29 @@ def run_random_simulations_fast(n_simulations, base, x_sig, x_trd, ma_dict_sig):
             offset_cl_buy, offset_cl_sell,
             ma_compare_short, ma_compare_long,
             offset_compare_short, offset_compare_long,
-            stop_loss_pct=stop_loss_pct, take_profit_pct=take_profit_pct
+            initial_cash=initial_cash,
+            stop_loss_pct=stop_loss_pct, take_profit_pct=take_profit_pct,
+            strategy_behavior="1. 포지션 없으면 매수 / 보유 중이면 매도",
+            min_hold_days=0,
+            fee_bps=fee_bps, slip_bps=slip_bps,
+            buy_operator=buy_operator, sell_operator=sell_operator
         )
         if not r:
             continue
 
+        # "매매 로그" 제외한 요약만
         result_clean = {k: v for k, v in r.items() if k != "매매 로그"}
+
         results.append({
             **result_clean,
             "ma_buy": ma_buy, "offset_ma_buy": offset_ma_buy, "buy_operator": buy_operator,
-            "ma_sell": ma_sell, "offset_ma_sell": offset_ma_sell,
+            "ma_sell": ma_sell, "offset_ma_sell": offset_ma_sell, "sell_operator": sell_operator,
             "offset_cl_buy": offset_cl_buy, "offset_cl_sell": offset_cl_sell,
             "ma_compare_short": ma_compare_short, "ma_compare_long": ma_compare_long,
             "offset_compare_short": offset_compare_short, "offset_compare_long": offset_compare_long,
             "stop_loss": stop_loss_pct, "take_profit": take_profit_pct,
-            "승률": r["승률 (%)"], "수익률": r["수익률 (%)"],"평균 거래당 수익률": r.get("평균 거래당 수익률 (%)", 0.0),
-            "중앙값 거래당 수익률": r.get("중앙값 거래당 수익률 (%)", 0.0),
-            "ProfitFactor": r.get("Profit Factor", 0.0),
+            # ⛔ 중복 제거: 여기서는 별도의 "수익률" / "승률" 컬럼 추가하지 않음
+            # (이미 result_clean에 "수익률 (%)", "승률 (%)"가 있음)
         })
     return pd.DataFrame(results)
 
@@ -825,15 +830,4 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (40회 실행)"):
         random.seed(int(seed))
     df_sim = run_random_simulations_fast(40, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
-    st.dataframe(df_sim.sort_values(by="수익률", ascending=False).reset_index(drop=True))
-
-
-
-
-
-
-
-
-
-
-
+    st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
