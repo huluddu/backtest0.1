@@ -584,12 +584,10 @@ def run_random_simulations_fast(
 
         results.append({
             **result_clean,
-            "ma_buy": ma_buy, "offset_ma_buy": offset_ma_buy, "buy_operator": buy_operator,
-            "ma_sell": ma_sell, "offset_ma_sell": offset_ma_sell, "sell_operator": sell_operator,
-            "offset_cl_buy": offset_cl_buy, "offset_cl_sell": offset_cl_sell,
-            "ma_compare_short": ma_compare_short, "ma_compare_long": ma_compare_long,
-            "offset_compare_short": offset_compare_short, "offset_compare_long": offset_compare_long,
-            "stop_loss": stop_loss_pct, "take_profit": take_profit_pct,
+            "매수종가일": offset_cl_buy, "매수비교": buy_operator, "매수이평일": offset_ma_buy, "매수이평": ma_buy, 
+            "매도종가일": offset_cl_sell, "매도비교": sell_operator, "매도이평일": offset_ma_sell, "매도이평": ma_sell, 
+            "과거이평일": offset_compare_short, "과거이평": ma_compare_short, "최근이평일": offset_compare_long, "최근이평": ma_compare_long,
+            "손절": stop_loss_pct, "익절": take_profit_pct,
             # ⛔ 중복 제거: 여기서는 별도의 "수익률" / "승률" 컬럼 추가하지 않음
             # (이미 result_clean에 "수익률 (%)", "승률 (%)"가 있음)
         })
@@ -831,3 +829,4 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (40회 실행)"):
     df_sim = run_random_simulations_fast(40, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
