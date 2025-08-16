@@ -371,7 +371,7 @@ def backtest_fast(
         else:
             sell_base = (cl_s > ma_s)
             
-        if sell_invesre_trend:
+        if use_trend_in_sell:
             sell_condition = sell_base and not trend_ok
         else:
             sell_condition = sell_base
@@ -851,5 +851,6 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (40회 실행)"):
     df_sim = run_random_simulations_fast(40, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
