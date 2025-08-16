@@ -976,7 +976,6 @@ choices_dict = {
 }
 
 
-
 if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     # 랜덤 가능성 있는 MA 윈도우 풀
     ma_pool = [5, 10, 15, 25, 50]
@@ -992,11 +991,4 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     )
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
-
-
-# 랜덤 시드 고정(선택)
-if seed_val:
-    random.seed(int(seed_val))
-
-
 
