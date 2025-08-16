@@ -229,13 +229,12 @@ with st.expander("📈 전략 조건 설정"):
         buy_operator = st.selectbox("매수 조건 부호", [">", "<"], index=0)
         offset_ma_buy = st.number_input("□일 전", key="offset_ma_buy", value=preset_values.get("offset_ma_buy", 1))
         ma_buy = st.number_input("□일 이동평균선", key="ma_buy", value=preset_values.get("ma_buy", 25))
-   
         st.markdown("---")
-        st.markdown("근데, 필요시 조건을 더 해")
-        offset_compare_short = st.number_input("□일 전", key="offset_compare_short", value=preset_values.get("offset_compare_short", 1))
-        ma_compare_short = st.number_input("□일 이동평균선보다 (0=비활성)", key="ma_compare_short", value=preset_values.get("ma_compare_short", 0))
+        use_trend_in_buy = st.checkbox("매수에 추세필터 적용", value=True, help="MA_SHORT < MA_LONG일 때만 매수 조건을 인정")
+        offset_compare_short = st.number_input("□일 전", key="offset_compare_short", value=preset_values.get("offset_compare_short", 25))
+        ma_compare_short = st.number_input("□일 이동평균선보다", key="ma_compare_short", value=preset_values.get("ma_compare_short", 25))
         offset_compare_long = st.number_input("□일 전", key="offset_compare_long", value=preset_values.get("offset_compare_long", 1))
-        ma_compare_long = st.number_input("□일 이동평균선이 커야 **매수**", key="ma_compare_long", value=preset_values.get("ma_compare_long", 0))
+        ma_compare_long = st.number_input("□일 이동평균선이 커야 **매수**", key="ma_compare_long", value=preset_values.get("ma_compare_long", 25))
 
     with col_right:
         st.markdown("**📤 매도 조건**")
@@ -246,6 +245,9 @@ with st.expander("📈 전략 조건 설정"):
         stop_loss_pct = st.number_input("손절 기준 (%)", key="stop_loss_pct", value=preset_values.get("stop_loss_pct", 0.0), step=0.5)
         take_profit_pct = st.number_input("익절 기준 (%)", key="take_profit_pct", value=preset_values.get("take_profit_pct", 0.0), step=0.5)
         min_hold_days = st.number_input("매수 후 최소 보유일", key="min_hold_days", value=0, min_value=0, step=1)
+        st.markdown("---")
+        use_trend_in_sell = st.checkbox("매도는 역추세만(추세 불통과일 때만)", value=False, help="체크 시 trend_ok가 False일 때만 매도 인정")
+        
 
     strategy_behavior = st.selectbox(
         "⚙️ 매수/매도 조건 동시 발생 시 행동",
@@ -296,6 +298,8 @@ def backtest_fast(
     strategy_behavior="1. 포지션 없으면 매수 / 보유 중이면 매도",
     min_hold_days=0,
     fee_bps=0, slip_bps=0,
+    use_trend_in_buy=True,
+    use_trend_in_sell=False,
     buy_operator=">", sell_operator="<"
 ):
     n = len(base)
@@ -351,17 +355,27 @@ def backtest_fast(
 
         # ===== 조건 계산 =====
         signal = "HOLD"
-
-
+        
         if buy_operator == ">":
-            buy_condition = (cl_b > ma_b) and trend_ok
+            buy_base = (cl_b > ma_b)
         else:
-            buy_condition = (cl_b < ma_b) and trend_ok
-
+            buy_base = (cl_b < ma_b)
+            
+        if use_trend_in_buy:
+            buy_condition = buy_base and trend_ok
+        else:
+            buy_condition = buy_base
+            
         if sell_operator == "<":
-            sell_condition = (cl_s < ma_s) and not trend_ok
+            sell_base = (cl_s < ma_s)
         else:
-            sell_condition = (cl_s > ma_s) and not trend_ok
+            sell_base = (cl_s > ma_s)
+            
+        if sell_invesre_trend:
+            sell_condition = sell_base and not trend_ok
+        else:
+            sell_condition = sell_base
+            
         
         stop_hit = (stop_loss_pct > 0 and profit_pct <= -stop_loss_pct)
         take_hit = (take_profit_pct > 0 and profit_pct >= take_profit_pct)
@@ -549,8 +563,9 @@ def run_random_simulations_fast(
         offset_cl_sell = random.choice([1, 5, 15, 25])
         sell_operator = random.choice(["<", ">"]) if randomize_sell_operator else "<"
 
-        mcs = random.choice([0, 1, 5, 15, 25])
-        ma_compare_short = None if mcs == 0 else mcs
+        use_trend_in_buy = random.choice([True, False])
+        use_trend_in_sell = random.choice([True, False])
+        ma_compare_short = random.choice([1, 5, 15, 25])
         ma_compare_long  = ma_compare_short
         offset_compare_short = random.choice([1, 15, 25])
         offset_compare_long  = random.choice([1])
@@ -574,6 +589,8 @@ def run_random_simulations_fast(
             strategy_behavior="1. 포지션 없으면 매수 / 보유 중이면 매도",
             min_hold_days=0,
             fee_bps=fee_bps, slip_bps=slip_bps,
+            use_trend_in_buy=use_trend_in_buy,
+            use_trend_in_sell=use_trend_in_sell,
             buy_operator=buy_operator, sell_operator=sell_operator
         )
         if not r:
@@ -585,7 +602,8 @@ def run_random_simulations_fast(
         results.append({
             **result_clean,
             "매수종가일": offset_cl_buy, "매수비교": buy_operator, "매수이평일": offset_ma_buy, "매수이평": ma_buy, 
-            "매도종가일": offset_cl_sell, "매도비교": sell_operator, "매도이평일": offset_ma_sell, "매도이평": ma_sell, 
+            "매도종가일": offset_cl_sell, "매도비교": sell_operator, "매도이평일": offset_ma_sell, "매도이평": ma_sell,
+            "매수추세": use_trend_in_buy, "매도추세": use_trend_in_sell,
             "과거이평일": offset_compare_short, "과거이평": ma_compare_short, "최근이평일": offset_compare_long, "최근이평": ma_compare_long,
             "손절": stop_loss_pct, "익절": take_profit_pct,
             # ⛔ 중복 제거: 여기서는 별도의 "수익률" / "승률" 컬럼 추가하지 않음
@@ -618,7 +636,11 @@ if st.button("✅ 백테스트 실행"):
         stop_loss_pct=stop_loss_pct, take_profit_pct=take_profit_pct,
         min_hold_days=min_hold_days,
         strategy_behavior=strategy_behavior,
-        fee_bps=fee_bps, slip_bps=slip_bps
+        fee_bps=fee_bps, slip_bps=slip_bps,
+        use_trend_in_buy=use_trend_in_buy,
+        use_trend_in_sell=use_trend_in_sell,
+        buy_operator=buy_operator,
+        sell_operator=sell_operator
     )
 
     if result:
@@ -829,4 +851,5 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (40회 실행)"):
     df_sim = run_random_simulations_fast(40, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
