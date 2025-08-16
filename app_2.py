@@ -596,33 +596,42 @@ def backtest_fast(
 
 
 # ===== Fast Random Sims =====
+# ===== Fast Random Sims =====
 def run_random_simulations_fast(
     n_simulations, base, x_sig, x_trd, ma_dict_sig,
-    initial_cash=5_000_000, fee_bps=25, slip_bps=0,
-    randomize_sell_operator=False  # 필요 시 True로
+    initial_cash=5_000_000, fee_bps=0, slip_bps=0,
+    randomize_sell_operator=False,  # 필요 시 True로
+    choices_dict=None               # ✅ 추가: 사용자 입력 후보값 딕셔너리
 ):
     results = []
+    if choices_dict is None:
+        choices_dict = {}
+
+    def _pick_one(choices, fallback):
+        return random.choice(choices) if choices else fallback
+
+    results = []
     for _ in range(n_simulations):
-        ma_buy             = _pick_one(choices_dict["ma_buy"],               random.choice([1, 5, 10, 15, 25]))
-        offset_ma_buy      = _pick_one(choices_dict["offset_ma_buy"],        random.choice([1, 5, 15, 25]))
-        offset_cl_buy      = _pick_one(choices_dict["offset_cl_buy"],        random.choice([1, 5, 15, 25]))
-        buy_operator       = _pick_one(choices_dict["buy_operator"],         random.choice([">", "<"]))
+        ma_buy             = _pick_one(choices_dict.get("ma_buy", []),               random.choice([1, 5, 10, 15, 25]))
+        offset_ma_buy      = _pick_one(choices_dict.get("offset_ma_buy", []),        random.choice([1, 5, 15, 25]))
+        offset_cl_buy      = _pick_one(choices_dict.get("offset_cl_buy", []),        random.choice([1, 5, 15, 25]))
+        buy_operator       = _pick_one(choices_dict.get("buy_operator", []),         random.choice([">", "<"]))
 
-        ma_sell            = _pick_one(choices_dict["ma_sell"],              random.choice([1, 5, 10, 15, 25]))
-        offset_ma_sell     = _pick_one(choices_dict["offset_ma_sell"],       random.choice([1, 5, 15, 25]))
-        offset_cl_sell     = _pick_one(choices_dict["offset_cl_sell"],       random.choice([1, 5, 15, 25]))
-        sell_operator      = _pick_one(choices_dict["sell_operator"],        random.choice(["<", ">"]))
+        ma_sell            = _pick_one(choices_dict.get("ma_sell", []),              random.choice([1, 5, 10, 15, 25]))
+        offset_ma_sell     = _pick_one(choices_dict.get("offset_ma_sell", []),       random.choice([1, 5, 15, 25]))
+        offset_cl_sell     = _pick_one(choices_dict.get("offset_cl_sell", []),       random.choice([1, 5, 15, 25]))
+        sell_operator      = _pick_one(choices_dict.get("sell_operator", []),        random.choice(["<", ">"]))
 
-        use_trend_in_buy   = _pick_one(choices_dict["use_trend_in_buy"],     random.choice([True, False]))
-        use_trend_in_sell  = _pick_one(choices_dict["use_trend_in_sell"],    random.choice([True, False]))
+        use_trend_in_buy   = _pick_one(choices_dict.get("use_trend_in_buy", []),     random.choice([True, False]))
+        use_trend_in_sell  = _pick_one(choices_dict.get("use_trend_in_sell", []),    random.choice([True, False]))
 
-        ma_compare_short   = _pick_one(choices_dict["ma_compare_short"],     random.choice([1, 5, 15, 25]))
-        ma_compare_long    = _pick_one(choices_dict["ma_compare_long"],      ma_compare_short)
-        offset_compare_short = _pick_one(choices_dict["offset_compare_short"], random.choice([1, 15, 25]))
-        offset_compare_long  = _pick_one(choices_dict["offset_compare_long"],  1)
+        ma_compare_short   = _pick_one(choices_dict.get("ma_compare_short", []),     random.choice([1, 5, 15, 25]))
+        ma_compare_long    = _pick_one(choices_dict.get("ma_compare_long", []),      ma_compare_short)
+        offset_compare_short = _pick_one(choices_dict.get("offset_compare_short", []), random.choice([1, 15, 25]))
+        offset_compare_long  = _pick_one(choices_dict.get("offset_compare_long", []),  1)
 
-        stop_loss_pct      = _pick_one(choices_dict["stop_loss_pct"],        0.0)
-        take_profit_pct    = _pick_one(choices_dict["take_profit_pct"],      random.choice([0.0, 25.0, 50.0]))
+        stop_loss_pct      = _pick_one(choices_dict.get("stop_loss_pct", []),        0.0)
+        take_profit_pct    = _pick_one(choices_dict.get("take_profit_pct", []),      random.choice([0.0, 25.0, 50.0]))
 
         
         # 필요한 MA 즉석 보충
@@ -900,7 +909,11 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     )
     if seed:
         random.seed(int(seed))
-    df_sim = run_random_simulations_fast(100, base, x_sig, x_trd, ma_dict_sig)
+    df_sim = run_random_simulations_fast(
+        100, base, x_sig, x_trd, ma_dict_sig,
+        initial_cash=initial_cash_ui, fee_bps=fee_bps, slip_bps=slip_bps,
+        choices_dict=choices_dict  # ✅ 추가 전달
+    )
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
 
@@ -964,3 +977,4 @@ choices_dict = {
 # 랜덤 시드 고정(선택)
 if seed_val:
     random.seed(int(seed_val))
+
