@@ -219,22 +219,20 @@ with col4:
 with st.expander("📈 전략 조건 설정"):
     # 📌 프리셋 선택 UI
     selected_preset = st.selectbox("🎯 전략 프리셋 선택", ["직접 설정"] + list(PRESETS.keys()))
+    preset_values = {} if selected_preset == "직접 설정" else PRESETS[selected_preset]
 
-    if selected_preset != "직접 설정":
-        preset_values = PRESETS[selected_preset]
-    else:
-        preset_values = {}
+    ops = [">", "<"]
 
     col_left, col_right = st.columns(2)
 
     with col_left:
         st.markdown("**📥 매수 조건**")
         offset_cl_buy = st.number_input("□일 전 종가", key="offset_cl_buy", value=preset_values.get("offset_cl_buy", 25))
-        buy_operator = st.selectbox("매수 조건 부호", [">", "<"], index=0)
+        buy_operator = st.selectbox("매수 조건 부호", ops, index=ops.index(preset_values.get("buy_operator", ">")))
         offset_ma_buy = st.number_input("□일 전", key="offset_ma_buy", value=preset_values.get("offset_ma_buy", 1))
         ma_buy = st.number_input("□일 이동평균선", key="ma_buy", value=preset_values.get("ma_buy", 25))
         st.markdown("---")
-        use_trend_in_buy = st.checkbox("매수에 추세필터 적용", value=True, help="MA_SHORT < MA_LONG일 때만 매수 조건을 인정")
+        use_trend_in_buy = st.checkbox("매수에 추세필터 적용", value=preset_values.get("use_trend_in_buy", True))
         offset_compare_short = st.number_input("□일 전", key="offset_compare_short", value=preset_values.get("offset_compare_short", 25))
         ma_compare_short = st.number_input("□일 이동평균선보다", key="ma_compare_short", value=preset_values.get("ma_compare_short", 25))
         offset_compare_long = st.number_input("□일 전", key="offset_compare_long", value=preset_values.get("offset_compare_long", 1))
@@ -243,14 +241,14 @@ with st.expander("📈 전략 조건 설정"):
     with col_right:
         st.markdown("**📤 매도 조건**")
         offset_cl_sell = st.number_input("□일 전 종가", key="offset_cl_sell", value=preset_values.get("offset_cl_sell", 1))
-        sell_operator = st.selectbox("매도 조건 부호", ["<", ">"], index=0)
+        sell_operator = st.selectbox("매도 조건 부호", ops, index=ops.index(preset_values.get("sell_operator", "<")))
         offset_ma_sell = st.number_input("□일 전", key="offset_ma_sell", value=preset_values.get("offset_ma_sell", 1))
         ma_sell = st.number_input("□일 이동평균선", key="ma_sell", value=preset_values.get("ma_sell", 25))
         stop_loss_pct = st.number_input("손절 기준 (%)", key="stop_loss_pct", value=preset_values.get("stop_loss_pct", 0.0), step=0.5)
         take_profit_pct = st.number_input("익절 기준 (%)", key="take_profit_pct", value=preset_values.get("take_profit_pct", 0.0), step=0.5)
         min_hold_days = st.number_input("매수 후 최소 보유일", key="min_hold_days", value=0, min_value=0, step=1)
         st.markdown("---")
-        use_trend_in_sell = st.checkbox("매도는 역추세만(추세 불통과일 때만)", value=False, help="체크 시 trend_ok가 False일 때만 매도 인정")
+        use_trend_in_sell = st.checkbox("매도는 역추세만(추세 불통과일 때만)", value=preset_values.get("use_trend_in_sell", False))
         
 
     strategy_behavior = st.selectbox(
@@ -844,7 +842,7 @@ if st.button("✅ 백테스트 실행"):
         st.download_button("⬇️ 백테스트 결과 다운로드 (CSV)", data=csv, file_name="backtest_result.csv", mime="text/csv")
 
 
-if st.button("🧪 랜덤 전략 시뮬레이션 (40회 실행)"):
+if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     # 랜덤 가능성 있는 MA 윈도우 풀
     ma_pool = [5, 10, 15, 25, 50]
     base, x_sig, x_trd, ma_dict_sig = prepare_base(
@@ -855,6 +853,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (40회 실행)"):
     df_sim = run_random_simulations_fast(100, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
