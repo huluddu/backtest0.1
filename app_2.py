@@ -1048,6 +1048,7 @@ with st.expander("🎲 랜덤 시뮬레이터 (리스트 입력 → N회 무작�
 
                 # base / x_sig / x_trd 전역에 주입
                 globals()["base"] = pd.DataFrame({"종가": s.astype(float)})
+                globals()["base"]["Date"] = globals()["base"].index
                 globals()["x_sig"] = globals()["base"]["종가"]
                 globals()["x_trd"] = t.astype(float).reindex(globals()["base"].index).ffill().bfill()
 
@@ -1235,3 +1236,4 @@ with st.expander("🎲 랜덤 시뮬레이터 (리스트 입력 → N회 무작�
 
         except Exception as e:
             st.exception(e)
+
