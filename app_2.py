@@ -55,10 +55,10 @@ def run_random_simulations(
             "offset_cl_buy": [5,15,25], "offset_cl_sell": [1,5],
             "ma_compare_short": [0,5,15,25], "ma_compare_long": [0,25],
             "offset_compare_short": [1,5,25], "offset_compare_long": [1,5,25],
-            "stop_loss_pct": [0.0, 5.0], "take_profit_pct": [0.0, 10.0],
+            "stop_loss_pct": [0.0], "take_profit_pct": [0.0, 25, 50],
             "strategy_behavior": ["1. 포지션 없으면 매수 / 보유 중이면 매도"],
-            "min_hold_days": [0, 3, 5],
-            "fee_bps": [0, 5, 10], "slip_bps": [0, 5, 10],
+            "min_hold_days": [0, 3],
+            "fee_bps": [0], "slip_bps": [0],
             "initial_cash": [5_000_000]
         }
     """
@@ -994,47 +994,62 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
 
+##########################3
 
-try:
-    import streamlit as st
-    import pandas as pd
-    import matplotlib.pyplot as plt
+# ===== Streamlit: Random Simulator (list input) =====
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
 
-    with st.expander("🎲 랜덤 시뮬레이터 (리스트 입력 → N회 무작위 샘플링)", expanded=False):
-        st.caption("콤마로 구분해서 입력하세요. 예) 5, 15, 25")
+with st.expander("🎲 랜덤 시뮬레이터 (리스트 입력 → N회 무작위 샘플링)", expanded=False):
+    st.caption("콤마로 구분해서 입력하세요. 예) 5, 15, 25")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            inp_ma_buy           = st.text_input("ma_buy 후보", "5, 15, 25")
-            inp_offset_ma_buy    = st.text_input("offset_ma_buy 후보", "1, 5, 25")
-            inp_ma_sell          = st.text_input("ma_sell 후보", "5, 15, 25")
-            inp_offset_ma_sell   = st.text_input("offset_ma_sell 후보", "1")
-            inp_offset_cl_buy    = st.text_input("offset_cl_buy 후보", "5, 15, 25")
-            inp_offset_cl_sell   = st.text_input("offset_cl_sell 후보", "1, 5")
+    # 0) 필수 객체 존재 확인
+    missing = [name for name in ["base", "x_sig", "x_trd", "backtest_fast"] if name not in globals()]
+    if missing:
+        st.error(f"필수 객체가 준비되지 않았습니다: {', '.join(missing)}\n"
+                 f"→ 데이터 로딩/전처리 파트가 먼저 실행되어야 합니다.")
+        st.stop()
 
-        with col2:
-            inp_ma_cmp_s         = st.text_input("ma_compare_short 후보 (0=비활성)", "0, 5, 15, 25")
-            inp_ma_cmp_l         = st.text_input("ma_compare_long 후보 (0=비활성)", "0, 25")
-            inp_off_cmp_s        = st.text_input("offset_compare_short 후보", "1, 5, 25")
-            inp_off_cmp_l        = st.text_input("offset_compare_long 후보", "1, 5, 25")
-            inp_stop             = st.text_input("손절%(stop_loss_pct) 후보", "0.0, 5.0")
-            inp_take             = st.text_input("익절%(take_profit_pct) 후보", "0.0, 10.0")
+    col1, col2 = st.columns(2)
+    with col1:
+        inp_ma_buy           = st.text_input("ma_buy 후보", "5, 15, 25", key="rs_ma_buy")
+        inp_offset_ma_buy    = st.text_input("offset_ma_buy 후보", "1, 5, 25", key="rs_off_ma_buy")
+        inp_ma_sell          = st.text_input("ma_sell 후보", "5, 15, 25", key="rs_ma_sell")
+        inp_offset_ma_sell   = st.text_input("offset_ma_sell 후보", "1", key="rs_off_ma_sell")
+        inp_offset_cl_buy    = st.text_input("offset_cl_buy 후보", "5, 15, 25", key="rs_off_cl_buy")
+        inp_offset_cl_sell   = st.text_input("offset_cl_sell 후보", "1, 5", key="rs_off_cl_sell")
 
-        col3, col4 = st.columns(2)
-        with col3:
-            inp_min_hold         = st.text_input("min_hold_days 후보", "0, 3, 5")
-            inp_fee              = st.text_input("수수료 bps 후보", "0, 5, 10")
-            inp_slip             = st.text_input("슬리피지 bps 후보", "0, 5, 10")
-            inp_cash             = st.text_input("초기자금 후보", "5000000")
-        with col4:
-            inp_behavior         = st.text_input("strategy_behavior 후보(문자열 콤마 분리)", 
-                                                 "1. 포지션 없으면 매수 / 보유 중이면 매도")
-            n_runs               = st.number_input("반복 횟수", min_value=10, max_value=5000, value=100, step=10)
-            seed_val             = st.number_input("Random Seed (선택)", value=0, step=1)
-            run_btn              = st.button("🚀 랜덤 시뮬레이션 실행")
+    with col2:
+        inp_ma_cmp_s         = st.text_input("ma_compare_short 후보 (0=비활성)", "0, 5, 15, 25", key="rs_cmp_s")
+        inp_ma_cmp_l         = st.text_input("ma_compare_long 후보 (0=비활성)", "0, 25", key="rs_cmp_l")
+        inp_off_cmp_s        = st.text_input("offset_compare_short 후보", "1, 5, 25", key="rs_off_cmp_s")
+        inp_off_cmp_l        = st.text_input("offset_compare_long 후보", "1, 5, 25", key="rs_off_cmp_l")
+        inp_stop             = st.text_input("손절%(stop_loss_pct) 후보", "0.0, 5.0", key="rs_stop")
+        inp_take             = st.text_input("익절%(take_profit_pct) 후보", "0.0, 10.0", key="rs_take")
 
-        if run_btn:
-            # 1) 후보 리스트 파싱
+    col3, col4 = st.columns(2)
+    with col3:
+        inp_min_hold         = st.text_input("min_hold_days 후보", "0, 3, 5", key="rs_min_hold")
+        inp_fee              = st.text_input("수수료 bps 후보", "0, 5, 10", key="rs_fee")
+        inp_slip             = st.text_input("슬리피지 bps 후보", "0, 5, 10", key="rs_slip")
+        inp_cash             = st.text_input("초기자금 후보", "5000000", key="rs_cash")
+    with col4:
+        inp_behavior         = st.text_input("strategy_behavior 후보(문자열 콤마 분리)",
+                                             "1. 포지션 없으면 매수 / 보유 중이면 매도",
+                                             key="rs_behavior")
+        n_runs               = st.number_input("반복 횟수", min_value=10, max_value=5000, value=100, step=10, key="rs_runs")
+        seed_val             = st.number_input("Random Seed (선택)", value=0, step=1, key="rs_seed")
+        run_btn              = st.button("🚀 랜덤 시뮬레이션 실행", key="rs_run_btn")
+
+    if run_btn:
+        try:
+            # 1) 리스트 파서
+            def _parse_list(text: str, cast_fn=int):
+                if not text:
+                    return []
+                return [cast_fn(x.strip()) for x in str(text).split(",") if x.strip() != ""]
+
             ma_buy_list           = _parse_list(inp_ma_buy, int)
             offset_ma_buy_list    = _parse_list(inp_offset_ma_buy, int)
             ma_sell_list          = _parse_list(inp_ma_sell, int)
@@ -1055,39 +1070,105 @@ try:
             cash_list             = _parse_list(inp_cash, int)
             behavior_list         = [s.strip() for s in inp_behavior.split(",") if s.strip()]
 
-            # 2) MA dict 준비 (필요한 모든 period 수집)
-            ma_period_candidates = set(ma_buy_list + ma_sell_list + ma_cmp_s_list + ma_cmp_l_list)
-            ma_dict_sig = _prepare_ma_dict_for_random(base, x_sig, ma_period_candidates)
-
-            # 3) 파라미터 dict 구성
-            param_lists = {
-                "ma_buy": ma_buy_list,
-                "offset_ma_buy": offset_ma_buy_list,
-                "ma_sell": ma_sell_list,
-                "offset_ma_sell": offset_ma_sell_list,
-                "offset_cl_buy": offset_cl_buy_list,
-                "offset_cl_sell": offset_cl_sell_list,
-                "ma_compare_short": ma_cmp_s_list,
-                "ma_compare_long": ma_cmp_l_list,
-                "offset_compare_short": off_cmp_s_list,
-                "offset_compare_long": off_cmp_l_list,
-                "stop_loss_pct": stop_list,
-                "take_profit_pct": take_list,
-                "min_hold_days": min_hold_list,
-                "fee_bps": fee_list,
-                "slip_bps": slip_list,
-                "initial_cash": cash_list,
-                "strategy_behavior": behavior_list,
+            # 2) 빈 후보 방지
+            required_lists = {
+                "ma_buy": ma_buy_list, "offset_ma_buy": offset_ma_buy_list,
+                "ma_sell": ma_sell_list, "offset_ma_sell": offset_ma_sell_list,
+                "offset_cl_buy": offset_cl_buy_list, "offset_cl_sell": offset_cl_sell_list,
+                "ma_compare_short": ma_cmp_s_list, "ma_compare_long": ma_cmp_l_list,
+                "offset_compare_short": off_cmp_s_list, "offset_compare_long": off_cmp_l_list,
+                "stop_loss_pct": stop_list, "take_profit_pct": take_list,
+                "min_hold_days": min_hold_list, "fee_bps": fee_list, "slip_bps": slip_list,
+                "initial_cash": cash_list, "strategy_behavior": behavior_list,
             }
+            empties = [k for k, v in required_lists.items() if isinstance(v, list) and len(v) == 0]
+            if empties:
+                st.error(f"아래 후보 리스트가 비어 있습니다: {', '.join(empties)}")
+                st.stop()
 
-            with st.spinner("랜덤 시뮬레이션 실행 중..."):
-                df_rand, best = run_random_simulations(
-                    base=base, x_sig=x_sig, x_trd=x_trd,
-                    ma_dict_sig=ma_dict_sig,
-                    n_runs=int(n_runs),
-                    param_lists=param_lists,
-                    seed=int(seed_val) if seed_val else None
+            # 3) MA dict 준비 (필요 기간 모아서 1회 계산)
+            def build_ma_dict_sig(close_series, ma_periods: set[int]):
+                import numpy as np
+                ma_dict = {}
+                for p in sorted({int(p) for p in ma_periods if p and int(p) > 0}):
+                    ma_dict[p] = close_series.rolling(p).mean().to_numpy()
+                return ma_dict
+
+            import numpy as np
+            import pandas as pd as _pd  # 내부전용
+
+            ma_period_candidates = set(ma_buy_list + ma_sell_list + ma_cmp_s_list + ma_cmp_l_list)
+            # 종가 Series 확보
+            if isinstance(base, pd.DataFrame) and ("종가" in base.columns):
+                close_series = base["종가"]
+            else:
+                close_series = x_sig if hasattr(x_sig, "rolling") else pd.Series(x_sig, name="Close")
+
+            ma_dict_sig = build_ma_dict_sig(close_series, ma_period_candidates)
+
+            # 4) 파라미터 dict 구성
+            param_lists = required_lists  # 위에서 만든 dict 그대로 사용
+
+            # 5) 실행
+            progress = st.progress(0)
+            logs = st.empty()
+
+            import random
+            rows = []
+            if seed_val:
+                random.seed(int(seed_val))
+
+            for i in range(1, int(n_runs) + 1):
+                picked = {k: (random.choice(v) if isinstance(v, list) and len(v) > 0 else None)
+                          for k, v in param_lists.items()}
+                # 0 -> None (비교 MA off)
+                for k in ("ma_compare_short", "ma_compare_long"):
+                    if picked.get(k) == 0:
+                        picked[k] = None
+
+                res = backtest_fast(
+                    base=base, x_sig=x_sig, x_trd=x_trd, ma_dict_sig=ma_dict_sig,
+                    ma_buy=picked.get("ma_buy"),
+                    offset_ma_buy=picked.get("offset_ma_buy"),
+                    ma_sell=picked.get("ma_sell"),
+                    offset_ma_sell=picked.get("offset_ma_sell"),
+                    offset_cl_buy=picked.get("offset_cl_buy"),
+                    offset_cl_sell=picked.get("offset_cl_sell"),
+                    ma_compare_short=picked.get("ma_compare_short"),
+                    ma_compare_long=picked.get("ma_compare_long"),
+                    offset_compare_short=picked.get("offset_compare_short", 1),
+                    offset_compare_long=picked.get("offset_compare_long", 1),
+                    initial_cash=picked.get("initial_cash", 5_000_000),
+                    stop_loss_pct=picked.get("stop_loss_pct", 0.0),
+                    take_profit_pct=picked.get("take_profit_pct", 0.0),
+                    strategy_behavior=picked.get("strategy_behavior", "1. 포지션 없으면 매수 / 보유 중이면 매도"),
+                    min_hold_days=picked.get("min_hold_days", 0),
+                    fee_bps=picked.get("fee_bps", 0),
+                    slip_bps=picked.get("slip_bps", 0),
                 )
+
+                row = {
+                    "run": i, **picked,
+                    "최종자산": res.get("최종자산"),
+                    "총수익률(%)": res.get("총수익률(%)"),
+                    "연율화 수익률(%)": res.get("연율화 수익률(%)"),
+                    "연율화 변동성(%)": res.get("연율화 변동성(%)"),
+                    "샤프": res.get("샤프"),
+                    "MDD(%)": res.get("MDD(%)") or res.get("최대낙폭(%)"),
+                    "승률(%)": res.get("승률(%)"),
+                    "거래횟수": res.get("거래횟수"),
+                    "기간": res.get("기간"),
+                }
+                rows.append(row)
+                if i % 5 == 0 or i == int(n_runs):
+                    progress.progress(i / int(n_runs))
+                    logs.write(f"진행률: {i}/{int(n_runs)} 회")
+
+            df_rand = pd.DataFrame(rows)
+            sort_cols = [c for c in ["샤프", "연율화 수익률(%)", "총수익률(%)"] if c in df_rand.columns]
+            if sort_cols:
+                df_rand = df_rand.sort_values(by=sort_cols, ascending=[False]*len(sort_cols), na_position="last")
+            best = df_rand.iloc[0].to_dict() if len(df_rand) else {}
 
             if len(df_rand) == 0:
                 st.warning("결과가 비어 있습니다. 입력 후보를 확인하세요.")
@@ -1098,7 +1179,6 @@ try:
                 st.subheader("🏆 Top-1 결과")
                 st.json(best)
 
-                # 히스토그램(샤프/연수익률/총수익률 중 첫 번째 숫자 컬럼)
                 plot_col = None
                 for c in ["샤프", "연율화 수익률(%)", "총수익률(%)"]:
                     if c in df_rand.columns and pd.api.types.is_numeric_dtype(df_rand[c]):
@@ -1109,12 +1189,7 @@ try:
                     ax.hist(df_rand[plot_col].dropna().to_numpy(), bins=30)
                     ax.set_title(f"{plot_col} 분포")
                     st.pyplot(fig, clear_figure=True)
-except Exception as _e:
-    # Streamlit이 아닌 환경에서 실행될 수 있으므로 조용히 패스
-    pass
 
-
-
-
-
+        except Exception as e:
+            st.exception(e)
 
