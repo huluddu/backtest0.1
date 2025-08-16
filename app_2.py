@@ -1094,9 +1094,6 @@ with st.expander("🎲 랜덤 시뮬레이터 (리스트 입력 → N회 무작�
                     ma_dict[p] = close_series.rolling(p).mean().to_numpy()
                 return ma_dict
 
-            import numpy as np
-            import pandas as pd as _pd  # 내부전용
-
             ma_period_candidates = set(ma_buy_list + ma_sell_list + ma_cmp_s_list + ma_cmp_l_list)
             # 종가 Series 확보
             if isinstance(base, pd.DataFrame) and ("종가" in base.columns):
@@ -1192,4 +1189,5 @@ with st.expander("🎲 랜덤 시뮬레이터 (리스트 입력 → N회 무작�
 
         except Exception as e:
             st.exception(e)
+
 
