@@ -555,16 +555,15 @@ def run_random_simulations_fast(
 ):
     results = []
     for _ in range(n_simulations):
-        ma_buy = random.choice([5, 10, 15, 25, 50])
+        ma_buy = random.choice([1, 5, 10, 15, 25])
         offset_ma_buy = random.choice([1, 5, 15, 25])
         offset_cl_buy = random.choice([1, 5, 15, 25])
         buy_operator = random.choice([">", "<"])
 
-        ma_sell = random.choice([5, 10, 15, 25])
+        ma_sell = random.choice([1, 5, 10, 15, 25])
         offset_ma_sell = random.choice([1, 5, 15, 25])
         offset_cl_sell = random.choice([1, 5, 15, 25])
-        sell_operator = random.choice(["<", ">"]) if randomize_sell_operator else "<"
-
+        sell_operator = random.choice(["<", ">"]) 
         use_trend_in_buy = random.choice([True, False])
         use_trend_in_sell = random.choice([True, False])
         ma_compare_short = random.choice([1, 5, 15, 25])
@@ -853,6 +852,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     df_sim = run_random_simulations_fast(100, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
