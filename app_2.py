@@ -177,11 +177,12 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
 
 # ✅ 전략 프리셋 목록 정의
 PRESETS = {
-    "SOXL 최고 전략": {
-        "ma_buy": 25, "offset_ma_buy": 1, "offset_cl_buy": 25,
-        "ma_sell": 25, "offset_ma_sell": 1, "offset_cl_sell": 1,
-        "ma_compare_short": 25, "ma_compare_long": 25,
+    "SOXL 매수/매도 추세 포함 전략": {
+        "ma_buy": 15, "offset_ma_buy": 15, "offset_cl_buy": 5,
+        "ma_sell": 25, "offset_ma_sell": 1, "offset_cl_sell": 5,
+        "ma_compare_short": 5, "ma_compare_long": 5,
         "offset_compare_short": 25, "offset_compare_long": 1,
+        "buy_operator": "<", "sell_operator": "<", 
         "stop_loss_pct": 0.0, "take_profit_pct": 0.0
     },
 
@@ -190,6 +191,7 @@ PRESETS = {
         "ma_sell": 25, "offset_ma_sell": 1, "offset_cl_sell": 1,
         "ma_compare_short": 25, "ma_compare_long": 25,
         "offset_compare_short": 25, "offset_compare_long": 1,
+        "buy_operator": ">", "sell_operator": "<", 
         "stop_loss_pct": 0.0, "take_profit_pct": 50.0
     }
 }
@@ -851,6 +853,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (40회 실행)"):
     df_sim = run_random_simulations_fast(40, base, x_sig, x_trd, ma_dict_sig)
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
