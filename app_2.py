@@ -900,6 +900,82 @@ if st.button("✅ 백테스트 실행"):
         csv = df_log.reset_index().to_csv(index=False).encode("utf-8-sig")
         st.download_button("⬇️ 백테스트 결과 다운로드 (CSV)", data=csv, file_name="backtest_result.csv", mime="text/csv")
 
+# --- 랜덤 시뮬 후보 입력 (간단 파서 포함) ---
+import re
+
+def _parse_list(text, typ="int"):
+    if text is None:
+        return []
+    toks = [t for t in re.split(r"[,\s]+", str(text).strip()) if t]
+    def to_bool(s):
+        s = s.strip().lower()
+        return s in ("1","true","t","y","yes","on")
+    out = []
+    for t in toks:
+        if typ == "int":
+            out.append(int(t))
+        elif typ == "float":
+            out.append(float(t))
+        elif typ == "bool":
+            out.append(to_bool(t))
+        else:
+            out.append(str(t))
+    # 중복 제거(입력 순서 유지)
+    seen, dedup = set(), []
+    for v in out:
+        k = (typ, v)
+        if k in seen: 
+            continue
+        seen.add(k); dedup.append(v)
+    return dedup
+
+with st.expander("🎲 랜덤 시뮬 변수 후보 입력", expanded=False):
+    colL, colR = st.columns(2)
+    with colL:
+        txt_ma_buy            = st.text_input("ma_buy 후보",            "1,5,10,15,25")
+        txt_offset_ma_buy     = st.text_input("offset_ma_buy 후보",     "1,5,15,25")
+        txt_offset_cl_buy     = st.text_input("offset_cl_buy 후보",     "1,5,15,25")
+        txt_buy_op            = st.text_input("buy_operator 후보",      ">,<")
+
+        txt_ma_cmp_s          = st.text_input("ma_compare_short 후보",  "1,5,15,25")
+        txt_ma_cmp_l          = st.text_input("ma_compare_long 후보",   "1,5,15,25")
+        txt_off_cmp_s         = st.text_input("offset_compare_short 후보", "1,15,25")
+        txt_off_cmp_l         = st.text_input("offset_compare_long 후보",  "1")
+    with colR:
+        txt_ma_sell           = st.text_input("ma_sell 후보",           "1,5,10,15,25")
+        txt_offset_ma_sell    = st.text_input("offset_ma_sell 후보",    "1,5,15,25")
+        txt_offset_cl_sell    = st.text_input("offset_cl_sell 후보",    "1,5,15,25")
+        txt_sell_op           = st.text_input("sell_operator 후보",     "<,>")
+
+        txt_use_trend_buy     = st.text_input("use_trend_in_buy 후보(True/False)",  "True,False")
+        txt_use_trend_sell    = st.text_input("use_trend_in_sell 후보(True/False)", "True,False")
+        txt_stop_loss         = st.text_input("stop_loss_pct 후보(%)",  "0")
+        txt_take_profit       = st.text_input("take_profit_pct 후보(%)","0,25,50")
+
+choices_dict = {
+    "ma_buy":               _parse_list(txt_ma_buy, "int"),
+    "offset_ma_buy":        _parse_list(txt_offset_ma_buy, "int"),
+    "offset_cl_buy":        _parse_list(txt_offset_cl_buy, "int"),
+    "buy_operator":         _parse_list(txt_buy_op, "str"),
+
+    "ma_sell":              _parse_list(txt_ma_sell, "int"),
+    "offset_ma_sell":       _parse_list(txt_offset_ma_sell, "int"),
+    "offset_cl_sell":       _parse_list(txt_offset_cl_sell, "int"),
+    "sell_operator":        _parse_list(txt_sell_op, "str"),
+
+    "use_trend_in_buy":     _parse_list(txt_use_trend_buy, "bool"),
+    "use_trend_in_sell":    _parse_list(txt_use_trend_sell, "bool"),
+
+    "ma_compare_short":     _parse_list(txt_ma_cmp_s, "int"),
+    "ma_compare_long":      _parse_list(txt_ma_cmp_l, "int"),
+    "offset_compare_short": _parse_list(txt_off_cmp_s, "int"),
+    "offset_compare_long":  _parse_list(txt_off_cmp_l, "int"),
+
+    "stop_loss_pct":        _parse_list(txt_stop_loss, "float"),
+    "take_profit_pct":      _parse_list(txt_take_profit, "float"),
+}
+
+
 
 if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     # 랜덤 가능성 있는 MA 윈도우 풀
@@ -977,4 +1053,5 @@ choices_dict = {
 # 랜덤 시드 고정(선택)
 if seed_val:
     random.seed(int(seed_val))
+
 
