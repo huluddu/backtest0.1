@@ -626,10 +626,13 @@ def run_random_simulations_fast(
         use_trend_in_sell  = _pick_one(choices_dict.get("use_trend_in_sell", []),    random.choice([True, False]))
 
         ma_compare_short   = _pick_one(choices_dict.get("ma_compare_short", []),     random.choice([1, 5, 15, 25]))
-        ma_compare_long    = _pick_one(choices_dict.get("ma_compare_long", []),      ma_compare_short)
+        ma_compare_long_choice = _pick_one(choices_dict.get("ma_compare_long", []), random.choice([5,15,25]))
+        if ma_compare_long_choice == "same":
+            ma_compare_long = ma_compare_short
+        else:
+            ma_compare_long = ma_compare_long_choice
         offset_compare_short = _pick_one(choices_dict.get("offset_compare_short", []), random.choice([1, 15, 25]))
         offset_compare_long  = _pick_one(choices_dict.get("offset_compare_long", []),  1)
-
         stop_loss_pct      = _pick_one(choices_dict.get("stop_loss_pct", []),        0.0)
         take_profit_pct    = _pick_one(choices_dict.get("take_profit_pct", []),      random.choice([0.0, 25.0, 50.0]))
 
@@ -913,7 +916,10 @@ def _parse_list(text, typ="int"):
     out = []
     for t in toks:
         if typ == "int":
-            out.append(int(t))
+            if str(t).lower() == "same":   # ✅ same 키워드 허용
+                out.append("same")
+            else:
+                out.append(int(t))
         elif typ == "float":
             out.append(float(t))
         elif typ == "bool":
@@ -932,17 +938,17 @@ def _parse_list(text, typ="int"):
 with st.expander("🎲 랜덤 시뮬 변수 후보 입력", expanded=False):
     colL, colR = st.columns(2)
     with colL:
-        txt_ma_buy            = st.text_input("ma_buy 후보",            "1,5,10,15,25")
+        txt_ma_buy            = st.text_input("ma_buy 후보",            "5,10,15,20,25")
         txt_offset_ma_buy     = st.text_input("offset_ma_buy 후보",     "1,5,15,25")
         txt_offset_cl_buy     = st.text_input("offset_cl_buy 후보",     "1,5,15,25")
         txt_buy_op            = st.text_input("buy_operator 후보",      ">,<")
 
-        txt_ma_cmp_s          = st.text_input("ma_compare_short 후보",  "1,5,15,25")
-        txt_ma_cmp_l          = st.text_input("ma_compare_long 후보",   "1,5,15,25")
-        txt_off_cmp_s         = st.text_input("offset_compare_short 후보", "1,15,25")
+        txt_ma_cmp_s          = st.text_input("ma_compare_short 후보",  "5,10,15,20,25")
+        txt_ma_cmp_l          = st.text_input("ma_compare_long 후보",   "same")
+        txt_off_cmp_s         = st.text_input("offset_compare_short 후보", "1,5,15,25")
         txt_off_cmp_l         = st.text_input("offset_compare_long 후보",  "1")
     with colR:
-        txt_ma_sell           = st.text_input("ma_sell 후보",           "1,5,10,15,25")
+        txt_ma_sell           = st.text_input("ma_sell 후보",           "5,10,15,20,25")
         txt_offset_ma_sell    = st.text_input("offset_ma_sell 후보",    "1,5,15,25")
         txt_offset_cl_sell    = st.text_input("offset_cl_sell 후보",    "1,5,15,25")
         txt_sell_op           = st.text_input("sell_operator 후보",     "<,>")
@@ -991,4 +997,5 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     )
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
