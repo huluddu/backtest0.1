@@ -994,64 +994,9 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
 
 
-with st.expander("🎲 랜덤 시뮬 변수(직접 입력 가능)", expanded=True):
-    st.markdown("각 칸에 **콤마(,)** 로 구분해 여러 후보를 넣으세요. 단일 값만 넣으면 그 값이 고정 적용됩니다.")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        txt_ma_buy           = st.text_input("ma_buy 후보",           "1,5,10,15,25")
-        txt_offset_ma_buy    = st.text_input("offset_ma_buy 후보",    "1,5,15,25")
-        txt_offset_cl_buy    = st.text_input("offset_cl_buy 후보",    "1,5,15,25")
-        txt_buy_op           = st.text_input("buy_operator 후보",     ">,<")
-
-        txt_ma_compare_short = st.text_input("ma_compare_short 후보", "1,5,15,25")
-        txt_ma_compare_long  = st.text_input("ma_compare_long 후보(동일하게 쓰려면 같은 값)", "1,5,15,25")
-        txt_offset_cmp_s     = st.text_input("offset_compare_short 후보", "1,15,25")
-        txt_offset_cmp_l     = st.text_input("offset_compare_long 후보",  "1")
-
-    with col2:
-        txt_ma_sell          = st.text_input("ma_sell 후보",          "1,5,10,15,25")
-        txt_offset_ma_sell   = st.text_input("offset_ma_sell 후보",   "1,5,15,25")
-        txt_offset_cl_sell   = st.text_input("offset_cl_sell 후보",   "1,5,15,25")
-        txt_sell_op          = st.text_input("sell_operator 후보",    "<,>")
-
-        txt_use_trend_buy    = st.text_input("use_trend_in_buy 후보(True/False)",  "True,False")
-        txt_use_trend_sell   = st.text_input("use_trend_in_sell 후보(True/False)", "True,False")
-        txt_stop_loss        = st.text_input("stop_loss_pct 후보(%)",              "0")          # 필요시 다중값 허용 예: "0,10,20"
-        txt_take_profit      = st.text_input("take_profit_pct 후보(%)",            "0,25,50")
-
-    col3, col4 = st.columns(2)
-    with col3:
-        n_trials = st.number_input("랜덤 시뮬 반복 횟수", min_value=1, max_value=10_000, value=100, step=10)
-    with col4:
-        seed_val = st.number_input("랜덤 시드(재현성)", min_value=0, max_value=1_000_000, value=0, step=1)
-
-# 문자열 → 리스트 변환 (빈 입력이면 기본 fallback 사용)
-choices_dict = {
-    "ma_buy":              _parse_choices(txt_ma_buy,           "int"),
-    "offset_ma_buy":       _parse_choices(txt_offset_ma_buy,    "int"),
-    "offset_cl_buy":       _parse_choices(txt_offset_cl_buy,    "int"),
-    "buy_operator":        _parse_choices(txt_buy_op,           "str"),
-
-    "ma_sell":             _parse_choices(txt_ma_sell,          "int"),
-    "offset_ma_sell":      _parse_choices(txt_offset_ma_sell,   "int"),
-    "offset_cl_sell":      _parse_choices(txt_offset_cl_sell,   "int"),
-    "sell_operator":       _parse_choices(txt_sell_op,          "str"),
-
-    "use_trend_in_buy":    _parse_choices(txt_use_trend_buy,    "bool"),
-    "use_trend_in_sell":   _parse_choices(txt_use_trend_sell,   "bool"),
-
-    "ma_compare_short":    _parse_choices(txt_ma_compare_short, "int"),
-    "ma_compare_long":     _parse_choices(txt_ma_compare_long,  "int"),
-    "offset_compare_short":_parse_choices(txt_offset_cmp_s,     "int"),
-    "offset_compare_long": _parse_choices(txt_offset_cmp_l,     "int"),
-
-    "stop_loss_pct":       _parse_choices(txt_stop_loss,        "float"),
-    "take_profit_pct":     _parse_choices(txt_take_profit,      "float"),
-}
-
 # 랜덤 시드 고정(선택)
 if seed_val:
     random.seed(int(seed_val))
+
 
 
