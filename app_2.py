@@ -994,23 +994,73 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
 
-##########################3
+##########################랜덤ㄲ##############33
 
 # ===== Streamlit: Random Simulator (list input) =====
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
+# 내부 헬퍼: 리스트 파서 (안전)
+def _rs_parse_list(text: str, cast_fn=int):
+    if not text:
+        return []
+    return [cast_fn(x.strip()) for x in str(text).split(",") if x.strip() != ""]
+
 with st.expander("🎲 랜덤 시뮬레이터 (리스트 입력 → N회 무작위 샘플링)", expanded=False):
     st.caption("콤마로 구분해서 입력하세요. 예) 5, 15, 25")
 
-    # 0) 필수 객체 존재 확인
-    missing = [name for name in ["base", "x_sig", "x_trd", "backtest_fast"] if name not in globals()]
-    if missing:
-        st.error(f"필수 객체가 준비되지 않았습니다: {', '.join(missing)}\n"
-                 f"→ 데이터 로딩/전처리 파트가 먼저 실행되어야 합니다.")
+    # --- 0) 데이터 준비 섹션: base/x_sig/x_trd 없으면 여기서 즉시 생성 ---
+    import yfinance as yf
+
+    have_all = all(name in globals() for name in ["base", "x_sig", "x_trd"])
+    with st.container(border=True):
+        st.markdown("**데이터 준비** (필수 객체가 없으면 여기서 생성합니다)")
+        c1, c2, c3 = st.columns([1,1,1])
+        with c1:
+            sig_ticker = st.text_input("Signal Ticker", value="SOXL", key="rs_sig_ticker")
+        with c2:
+            trd_ticker = st.text_input("Trade Ticker(미입력 시 Signal과 동일)", value="", key="rs_trd_ticker")
+        with c3:
+            period = st.selectbox("기간", ["max","10y","5y","2y","1y","6mo","3mo","1mo"], index=2, key="rs_period")
+
+        prep_btn = st.button("📦 데이터 준비/갱신", key="rs_prep_btn")
+        if prep_btn or not have_all:
+            try:
+                s = yf.download(sig_ticker, period=period)
+                if isinstance(s.columns, pd.MultiIndex):
+                    s = s["Close"]
+                else:
+                    s = s[["Close"]] if "Close" in s.columns else s
+                s = s.squeeze().dropna()
+
+                if trd_ticker.strip():
+                    t = yf.download(trd_ticker.strip(), period=period)
+                    if isinstance(t.columns, pd.MultiIndex):
+                        t = t["Close"]
+                    else:
+                        t = t[["Close"]] if "Close" in t.columns else t
+                    t = t.squeeze().dropna()
+                    # 인덱스 맞추기
+                    t = t.reindex(s.index).ffill().bfill()
+                else:
+                    t = s.copy()
+
+                # base / x_sig / x_trd 전역에 주입
+                globals()["base"] = pd.DataFrame({"종가": s.astype(float)})
+                globals()["x_sig"] = globals()["base"]["종가"]
+                globals()["x_trd"] = t.astype(float).reindex(globals()["base"].index).ffill().bfill()
+
+                st.success(f"데이터 준비 완료: Signal={sig_ticker}, Trade={trd_ticker or sig_ticker}, rows={len(globals()['base'])}")
+                have_all = True
+            except Exception as e:
+                st.exception(e)
+                have_all = False
+
+    if not have_all:
         st.stop()
 
+    # --- 1) 파라미터 입력 ---
     col1, col2 = st.columns(2)
     with col1:
         inp_ma_buy           = st.text_input("ma_buy 후보", "5, 15, 25", key="rs_ma_buy")
@@ -1042,35 +1092,31 @@ with st.expander("🎲 랜덤 시뮬레이터 (리스트 입력 → N회 무작�
         seed_val             = st.number_input("Random Seed (선택)", value=0, step=1, key="rs_seed")
         run_btn              = st.button("🚀 랜덤 시뮬레이션 실행", key="rs_run_btn")
 
+    # --- 2) 실행 ---
     if run_btn:
         try:
-            # 1) 리스트 파서
-            def _parse_list(text: str, cast_fn=int):
-                if not text:
-                    return []
-                return [cast_fn(x.strip()) for x in str(text).split(",") if x.strip() != ""]
+            # 후보 파싱
+            ma_buy_list           = _rs_parse_list(inp_ma_buy, int)
+            offset_ma_buy_list    = _rs_parse_list(inp_offset_ma_buy, int)
+            ma_sell_list          = _rs_parse_list(inp_ma_sell, int)
+            offset_ma_sell_list   = _rs_parse_list(inp_offset_ma_sell, int)
+            offset_cl_buy_list    = _rs_parse_list(inp_offset_cl_buy, int)
+            offset_cl_sell_list   = _rs_parse_list(inp_offset_cl_sell, int)
 
-            ma_buy_list           = _parse_list(inp_ma_buy, int)
-            offset_ma_buy_list    = _parse_list(inp_offset_ma_buy, int)
-            ma_sell_list          = _parse_list(inp_ma_sell, int)
-            offset_ma_sell_list   = _parse_list(inp_offset_ma_sell, int)
-            offset_cl_buy_list    = _parse_list(inp_offset_cl_buy, int)
-            offset_cl_sell_list   = _parse_list(inp_offset_cl_sell, int)
+            ma_cmp_s_list         = _rs_parse_list(inp_ma_cmp_s, int)   # 0 허용
+            ma_cmp_l_list         = _rs_parse_list(inp_ma_cmp_l, int)   # 0 허용
+            off_cmp_s_list        = _rs_parse_list(inp_off_cmp_s, int)
+            off_cmp_l_list        = _rs_parse_list(inp_off_cmp_l, int)
 
-            ma_cmp_s_list         = _parse_list(inp_ma_cmp_s, int)   # 0 허용
-            ma_cmp_l_list         = _parse_list(inp_ma_cmp_l, int)   # 0 허용
-            off_cmp_s_list        = _parse_list(inp_off_cmp_s, int)
-            off_cmp_l_list        = _parse_list(inp_off_cmp_l, int)
-
-            stop_list             = _parse_list(inp_stop, float)
-            take_list             = _parse_list(inp_take, float)
-            min_hold_list         = _parse_list(inp_min_hold, int)
-            fee_list              = _parse_list(inp_fee, int)
-            slip_list             = _parse_list(inp_slip, int)
-            cash_list             = _parse_list(inp_cash, int)
+            stop_list             = _rs_parse_list(inp_stop, float)
+            take_list             = _rs_parse_list(inp_take, float)
+            min_hold_list         = _rs_parse_list(inp_min_hold, int)
+            fee_list              = _rs_parse_list(inp_fee, int)
+            slip_list             = _rs_parse_list(inp_slip, int)
+            cash_list             = _rs_parse_list(inp_cash, int)
             behavior_list         = [s.strip() for s in inp_behavior.split(",") if s.strip()]
 
-            # 2) 빈 후보 방지
+            # 빈 후보 방지
             required_lists = {
                 "ma_buy": ma_buy_list, "offset_ma_buy": offset_ma_buy_list,
                 "ma_sell": ma_sell_list, "offset_ma_sell": offset_ma_sell_list,
@@ -1086,39 +1132,39 @@ with st.expander("🎲 랜덤 시뮬레이터 (리스트 입력 → N회 무작�
                 st.error(f"아래 후보 리스트가 비어 있습니다: {', '.join(empties)}")
                 st.stop()
 
-            # 3) MA dict 준비 (필요 기간 모아서 1회 계산)
-            def build_ma_dict_sig(close_series, ma_periods: set[int]):
-                import numpy as np
-                ma_dict = {}
-                for p in sorted({int(p) for p in ma_periods if p and int(p) > 0}):
-                    ma_dict[p] = close_series.rolling(p).mean().to_numpy()
-                return ma_dict
-
+            # MA dict 1회 준비 (SECTION B의 빌더 사용 가능)
             ma_period_candidates = set(ma_buy_list + ma_sell_list + ma_cmp_s_list + ma_cmp_l_list)
-            # 종가 Series 확보
-            if isinstance(base, pd.DataFrame) and ("종가" in base.columns):
+            if "build_ma_dict_sig" not in globals():
+                # 안전망: 간단 구현
+                def build_ma_dict_sig(close_series, ma_periods: set[int]):
+                    import numpy as np
+                    ma_dict = {}
+                    for p in sorted({int(p) for p in ma_periods if p and int(p) > 0}):
+                        ma_dict[p] = close_series.rolling(p).mean().to_numpy()
+                    return ma_dict
+
+            if "종가" in base.columns:
                 close_series = base["종가"]
             else:
                 close_series = x_sig if hasattr(x_sig, "rolling") else pd.Series(x_sig, name="Close")
-
             ma_dict_sig = build_ma_dict_sig(close_series, ma_period_candidates)
 
-            # 4) 파라미터 dict 구성
-            param_lists = required_lists  # 위에서 만든 dict 그대로 사용
+            # 파라미터 dict
+            param_lists = required_lists
 
-            # 5) 실행
+            # 진행률 표시 + 실행 (SECTION A의 run_random_simulations 써도 OK)
             progress = st.progress(0)
             logs = st.empty()
 
             import random
-            rows = []
             if seed_val:
                 random.seed(int(seed_val))
+            rows = []
+            total = int(n_runs)
 
-            for i in range(1, int(n_runs) + 1):
+            for i in range(1, total + 1):
                 picked = {k: (random.choice(v) if isinstance(v, list) and len(v) > 0 else None)
                           for k, v in param_lists.items()}
-                # 0 -> None (비교 MA off)
                 for k in ("ma_compare_short", "ma_compare_long"):
                     if picked.get(k) == 0:
                         picked[k] = None
@@ -1144,7 +1190,7 @@ with st.expander("🎲 랜덤 시뮬레이터 (리스트 입력 → N회 무작�
                     slip_bps=picked.get("slip_bps", 0),
                 )
 
-                row = {
+                rows.append({
                     "run": i, **picked,
                     "최종자산": res.get("최종자산"),
                     "총수익률(%)": res.get("총수익률(%)"),
@@ -1155,11 +1201,11 @@ with st.expander("🎲 랜덤 시뮬레이터 (리스트 입력 → N회 무작�
                     "승률(%)": res.get("승률(%)"),
                     "거래횟수": res.get("거래횟수"),
                     "기간": res.get("기간"),
-                }
-                rows.append(row)
-                if i % 5 == 0 or i == int(n_runs):
-                    progress.progress(i / int(n_runs))
-                    logs.write(f"진행률: {i}/{int(n_runs)} 회")
+                })
+
+                if i % 5 == 0 or i == total:
+                    progress.progress(i/total)
+                    logs.write(f"진행률: {i}/{total} 회")
 
             df_rand = pd.DataFrame(rows)
             sort_cols = [c for c in ["샤프", "연율화 수익률(%)", "총수익률(%)"] if c in df_rand.columns]
@@ -1189,5 +1235,3 @@ with st.expander("🎲 랜덤 시뮬레이터 (리스트 입력 → N회 무작�
 
         except Exception as e:
             st.exception(e)
-
-
