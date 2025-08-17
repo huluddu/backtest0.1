@@ -97,33 +97,103 @@ def get_yf_data_cached(ticker: str, start_date, end_date):
     df.columns = ["Date", "Close"]
     return df
 
-def get_data(ticker: str, start_date, end_date) -> pd.DataFrame:
-    """티커 타입에 따라 KRX/yf 로더 분기"""
-    try:
-        if ticker.lower().endswith(".ks") or ticker.isdigit():
-            return get_krx_data_cached(ticker, start_date, end_date)
-        return get_yf_data_cached(ticker, start_date, end_date)
-    except Exception as e:
-        st.error(f"❌ 데이터 로딩 실패: {e}")
-        return pd.DataFrame()
+def get_data(ticker: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+    """
+    어떤 티커(yfinance/pykrx)로 받아오든 최종적으로 ['Date','종가']만 반환.
+    """
+    def _norm_dates(s, e):
+        if s is None: s = "1990-01-01"
+        if e is None: e = dt.date.today().strftime("%Y-%m-%d")
+        return s, e
 
+    def _from_yf(tk, s, e):
+        import yfinance as yf
+        df = yf.download(tk, start=s, end=e, auto_adjust=False, progress=False)
+        if df is None or df.empty:
+            return None
+        # 멀티컬럼/인덱스 정리
+        if isinstance(df.columns, pd.MultiIndex):
+            df = df.droplevel(0, axis=1)
+        df = df.reset_index()
+        # 날짜 컬럼 명 보정
+        if "Date" not in df.columns:
+            # 첫 컬럼을 Date로 간주
+            first_col = df.columns[0]
+            df = df.rename(columns={first_col: "Date"})
+        # 종가 후보 결정
+        close_col = None
+        for c in ["Close", "Adj Close", "close", "adjclose"]:
+            if c in df.columns:
+                close_col = c
+                break
+        if close_col is None:
+            return None
+        out = df[["Date", close_col]].rename(columns={close_col: "종가"})
+        # 숫자형 보정
+        out["종가"] = pd.to_numeric(out["종가"], errors="coerce")
+        out = out.dropna(subset=["종가"])
+        return out
+
+    def _from_pykrx(tk, s, e):
+        try:
+            from pykrx import stock
+        except Exception:
+            return None
+        s2 = s.replace("-", "")
+        e2 = e.replace("-", "")
+        df = stock.get_market_ohlcv_by_date(s2, e2, tk)
+        if df is None or df.empty:
+            return None
+        df = df.reset_index().rename(columns={"날짜": "Date"})
+        df = df[["Date", "종가"]].copy()
+        # 숫자형 보정
+        df["종가"] = pd.to_numeric(df["종가"], errors="coerce")
+        df = df.dropna(subset=["종가"])
+        return df
+
+    start_date, end_date = _norm_dates(start_date, end_date)
+
+    # 한국 6자리 숫자면 우선 .KS 부착 시도
+    yf_try_list = []
+    if re.fullmatch(r"\d{6}", ticker):
+        yf_try_list = [f"{ticker}.KS", ticker]  # KOSPI 우선, 실패시 원문
+    else:
+        yf_try_list = [ticker]
+
+    # 1) yfinance 시도
+    for tk in yf_try_list:
+        df = _from_yf(tk, start_date, end_date)
+        if df is not None and not df.empty:
+            return df.sort_values("Date").reset_index(drop=True)
+
+    # 2) pykrx 시도
+    df = _from_pykrx(ticker, start_date, end_date)
+    if df is not None and not df.empty:
+        return df.sort_values("Date").reset_index(drop=True)
+
+    # 3) 그래도 실패
+    raise ValueError(f"데이터 로딩 실패: {ticker} (yfinance/pykrx 모두 비어 있음)")
 
 
 # ===== Base prepare =====
 @st.cache_data(show_spinner=False, ttl=1800)
 def prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool):
-    """한 번에 머지 + 필요한 모든 MA(신호용) 미리 계산"""
-    sig = get_data(signal_ticker, start_date, end_date).sort_values("Date")
-    trd = get_data(trade_ticker, start_date, end_date).sort_values("Date")
-    base = pd.merge(sig, trd, on="Date", suffixes=("_sig", "_trd"), how="inner").dropna().reset_index(drop=True)
+    sig = get_data(signal_ticker, start_date, end_date)
+    trd = get_data(trade_ticker,  start_date, end_date)
 
-    x_sig = base["Close_sig"].to_numpy(dtype=float)
-    x_trd = base["Close_trd"].to_numpy(dtype=float)
+    # 방어: 필수 컬럼 확인
+    for name, df in [("signal", sig), ("trade", trd)]:
+        if df is None or df.empty:
+            raise ValueError(f"{name} 데이터가 비었습니다.")
+        if not {"Date", "종가"}.issubset(df.columns):
+            raise KeyError(f"{name} 데이터에 'Date'/'종가' 열이 없습니다: {df.columns.tolist()}")
 
-    ma_dict_sig = {}
-    for w in sorted(set([w for w in ma_pool if w and w > 0])):
-        ma_dict_sig[w] = _fast_ma(x_sig, w)
-
+    # 여기부터는 기존 로직 (merge 등)...
+    base = sig.merge(trd, on="Date", how="inner", suffixes=("_sig", "_trd"))
+    # 이후 코드에서 참조하는 열 이름을 맞춰주세요.
+    # 예: signal 종가는 '종가_sig', trade 종가는 '종가_trd'
+    # ma_dict_sig 생성 등 기존 로직 그대로
+    ...
     return base, x_sig, x_trd, ma_dict_sig
 
 
@@ -318,7 +388,7 @@ with st.expander("⚙️ 체결/비용 & 기타 설정"):
 
 # ✅ 시그널 체크
 if st.button("📌 오늘 시그널 체크"):
-    df_today = get_data(signal_ticker, start_date, end_date)
+    df_today = (signal_ticker, start_date, end_date)
     if not df_today.empty:
         check_signal_today(df_today,
             ma_buy=ma_buy,
@@ -997,5 +1067,6 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     )
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
