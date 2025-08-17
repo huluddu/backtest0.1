@@ -97,103 +97,150 @@ def get_yf_data_cached(ticker: str, start_date, end_date):
     df.columns = ["Date", "Close"]
     return df
 
+#####
+
+import re
 import datetime as dt
 import pandas as pd
 
 def _to_datestr(x):
-    """입력(x)을 'YYYY-MM-DD' 문자열로 강제 변환"""
     if x is None:
         return dt.date.today().strftime("%Y-%m-%d")
-    # pandas가 date/datetime/str 가리지 않고 처리
     return pd.to_datetime(x).strftime("%Y-%m-%d")
 
 def _to_yyyymmdd(x):
-    """입력(x)을 'YYYYMMDD' 문자열로 강제 변환 (pykrx용)"""
     if x is None:
         return dt.date.today().strftime("%Y%m%d")
     return pd.to_datetime(x).strftime("%Y%m%d")
 
-def get_data(ticker: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
-    """
-    어떤 티커(yfinance/pykrx)로 받아오든 최종적으로 ['Date','종가']만 반환.
-    """
-    
-    start_date = _to_datestr(start_date)
-    end_date   = _to_datestr(end_date)
-    
-    def _norm_dates(s, e):
-        if s is None: s = "1990-01-01"
-        if e is None: e = dt.date.today().strftime("%Y-%m-%d")
-        return s, e
+def _normalize_range(s, e):
+    s = pd.to_datetime(_to_datestr(s))
+    e = pd.to_datetime(_to_datestr(e))
+    # 종료가 시작보다 빠르면 오늘로 재설정
+    if e < s:
+        e = pd.to_datetime(dt.date.today())
+    # 동일일/주말 등으로 너무 빈약하면 시작을 14일 앞당김
+    if (e - s).days < 2:
+        s = e - pd.Timedelta(days=14)
+    return s.strftime("%Y-%m-%d"), e.strftime("%Y-%m-%d")
 
-    def _from_yf(tk, s, e):
-        import yfinance as yf
-        df = yf.download(tk, start=s, end=e, auto_adjust=False, progress=False)
+def get_data(ticker: str, start_date=None, end_date=None) -> pd.DataFrame:
+    """
+    어떤 입력이 와도 ['Date','종가']만 반환.
+    한국 6자리 → .KS, .KQ 둘 다 시도.
+    yfinance download 비면 history로 재시도.
+    pykrx는 있으면 3차 시도(없어도 동작).
+    실패 시 어떤 티커들을 시도했는지 상세 에러 제공.
+    """
+    import yfinance as yf
+
+    # 0) 날짜 정리
+    start_date, end_date = _normalize_range(start_date, end_date)
+
+    # 1) 시도할 yfinance 티커 후보군 만들기
+    tried = []
+    if re.fullmatch(r"\d{6}", ticker):
+        # 한국 6자리면 KS->KQ->원문 순으로
+        candidates = [f"{ticker}.KS", f"{ticker}.KQ", ticker]
+    else:
+        # 이미 접미사가 붙어있을 수도 있으니 중복 제거
+        candidates = [ticker]
+        if not ticker.endswith(".KS") and re.fullmatch(r"\d{6}\.KS", f"{ticker}.KS") is False:
+            # 숫자 6자리가 아니라면 .KS/.KQ 붙이면 이상해질 수 있어 조건부로만 추가
+            m = re.fullmatch(r"(\d{6})", re.sub(r"\.K[QS]$", "", ticker))
+            if m:
+                n = m.group(1)
+                for suf in [".KS", ".KQ"]:
+                    cand = n + suf
+                    if cand not in candidates:
+                        candidates.append(cand)
+        # 한국형이 아니어도 혹시 모를 오타 대비로 .KS/.KQ 시도 (부담된다면 제거 가능)
+        if re.fullmatch(r"\d{6}\.[A-Z]{2}", ticker) is None and re.fullmatch(r"\d{6}", ticker or ""):
+            for suf in [".KS", ".KQ"]:
+                cand = f"{ticker}{suf}"
+                if cand not in candidates:
+                    candidates.append(cand)
+
+    # 2) yfinance 1차: download
+    def _from_yf_download(tk):
+        df = yf.download(tk, start=start_date, end=end_date, auto_adjust=False, progress=False)
         if df is None or df.empty:
             return None
-        # 멀티컬럼/인덱스 정리
         if isinstance(df.columns, pd.MultiIndex):
             df = df.droplevel(0, axis=1)
         df = df.reset_index()
-        # 날짜 컬럼 명 보정
         if "Date" not in df.columns:
             # 첫 컬럼을 Date로 간주
-            first_col = df.columns[0]
-            df = df.rename(columns={first_col: "Date"})
-        # 종가 후보 결정
-        close_col = None
-        for c in ["Close", "Adj Close", "close", "adjclose"]:
-            if c in df.columns:
-                close_col = c
-                break
+            df = df.rename(columns={df.columns[0]: "Date"})
+        close_col = "Close" if "Close" in df.columns else ("Adj Close" if "Adj Close" in df.columns else None)
         if close_col is None:
             return None
         out = df[["Date", close_col]].rename(columns={close_col: "종가"})
-        # 숫자형 보정
         out["종가"] = pd.to_numeric(out["종가"], errors="coerce")
         out = out.dropna(subset=["종가"])
-        return out
+        return out if not out.empty else None
 
-    def _from_pykrx(tk, s, e):
+    # 3) yfinance 2차: Ticker.history (download가 빈 경우)
+    def _from_yf_history(tk):
+        try:
+            t = yf.Ticker(tk)
+            df = t.history(start=start_date, end=end_date, auto_adjust=False, actions=False)
+            if df is None or df.empty:
+                # period="max"로 받아서 날짜 필터링
+                df2 = t.history(period="max", auto_adjust=False, actions=False)
+                if df2 is None or df2.empty:
+                    return None
+                df = df2[(df2.index >= pd.to_datetime(start_date)) & (df2.index <= pd.to_datetime(end_date))]
+                if df is None or df.empty:
+                    return None
+            if isinstance(df.columns, pd.MultiIndex):
+                df = df.droplevel(0, axis=1)
+            df = df.reset_index().rename(columns={"Date": "Date"})
+            close_col = "Close" if "Close" in df.columns else ("Adj Close" if "Adj Close" in df.columns else None)
+            if close_col is None:
+                return None
+            out = df[["Date", close_col]].rename(columns={close_col: "종가"})
+            out["종가"] = pd.to_numeric(out["종가"], errors="coerce")
+            out = out.dropna(subset=["종가"])
+            return out if not out.empty else None
+        except Exception:
+            return None
+
+    # 4) 시도 루프 (yfinance)
+    for tk in candidates:
+        tried.append(f"yf:download:{tk}")
+        out = _from_yf_download(tk)
+        if out is not None and not out.empty:
+            return out.sort_values("Date").reset_index(drop=True)
+        tried.append(f"yf:history:{tk}")
+        out = _from_yf_history(tk)
+        if out is not None and not out.empty:
+            return out.sort_values("Date").reset_index(drop=True)
+
+    # 5) pykrx (있으면)
+    def _from_pykrx(tk):
         try:
             from pykrx import stock
         except Exception:
             return None
-        s2 = _to_yyyymmdd(s)
-        e2 = _to_yyyymmdd(e)
-        
+        s2 = _to_yyyymmdd(start_date)
+        e2 = _to_yyyymmdd(end_date)
         df = stock.get_market_ohlcv_by_date(s2, e2, tk)
         if df is None or df.empty:
             return None
         df = df.reset_index().rename(columns={"날짜": "Date"})
         df = df[["Date", "종가"]].copy()
-        # 숫자형 보정
         df["종가"] = pd.to_numeric(df["종가"], errors="coerce")
         df = df.dropna(subset=["종가"])
-        return df
+        return df if not df.empty else None
 
-    start_date, end_date = _norm_dates(start_date, end_date)
+    tried.append("pykrx:" + ticker)
+    out = _from_pykrx(ticker)
+    if out is not None and not out.empty:
+        return out.sort_values("Date").reset_index(drop=True)
 
-    # 한국 6자리 숫자면 우선 .KS 부착 시도
-    yf_try_list = []
-    if re.fullmatch(r"\d{6}", ticker):
-        yf_try_list = [f"{ticker}.KS", ticker]  # KOSPI 우선, 실패시 원문
-    else:
-        yf_try_list = [ticker]
-
-    # 1) yfinance 시도
-    for tk in yf_try_list:
-        df = _from_yf(tk, start_date, end_date)
-        if df is not None and not df.empty:
-            return df.sort_values("Date").reset_index(drop=True)
-
-    # 2) pykrx 시도
-    df = _from_pykrx(ticker, start_date, end_date)
-    if df is not None and not df.empty:
-        return df.sort_values("Date").reset_index(drop=True)
-
-    # 3) 그래도 실패
-    raise ValueError(f"데이터 로딩 실패: {ticker} (yfinance/pykrx 모두 비어 있음)")
+    # 6) 실패: 어떤 후보들을 시도했는지 알려줌
+    raise ValueError(f"데이터 로딩 실패: {ticker} (시도: {', '.join(tried)})")
 
 
 # ===== Base prepare =====
@@ -1088,6 +1135,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     )
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
