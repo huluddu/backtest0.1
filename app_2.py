@@ -97,10 +97,30 @@ def get_yf_data_cached(ticker: str, start_date, end_date):
     df.columns = ["Date", "Close"]
     return df
 
+import datetime as dt
+import pandas as pd
+
+def _to_datestr(x):
+    """입력(x)을 'YYYY-MM-DD' 문자열로 강제 변환"""
+    if x is None:
+        return dt.date.today().strftime("%Y-%m-%d")
+    # pandas가 date/datetime/str 가리지 않고 처리
+    return pd.to_datetime(x).strftime("%Y-%m-%d")
+
+def _to_yyyymmdd(x):
+    """입력(x)을 'YYYYMMDD' 문자열로 강제 변환 (pykrx용)"""
+    if x is None:
+        return dt.date.today().strftime("%Y%m%d")
+    return pd.to_datetime(x).strftime("%Y%m%d")
+
 def get_data(ticker: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
     """
     어떤 티커(yfinance/pykrx)로 받아오든 최종적으로 ['Date','종가']만 반환.
     """
+    
+    start_date = _to_datestr(start_date)
+    end_date   = _to_datestr(end_date)
+    
     def _norm_dates(s, e):
         if s is None: s = "1990-01-01"
         if e is None: e = dt.date.today().strftime("%Y-%m-%d")
@@ -139,8 +159,9 @@ def get_data(ticker: str, start_date: str = None, end_date: str = None) -> pd.Da
             from pykrx import stock
         except Exception:
             return None
-        s2 = s.replace("-", "")
-        e2 = e.replace("-", "")
+        s2 = _to_yyyymmdd(s)
+        e2 = _to_yyyymmdd(e)
+        
         df = stock.get_market_ohlcv_by_date(s2, e2, tk)
         if df is None or df.empty:
             return None
@@ -1067,6 +1088,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     )
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
