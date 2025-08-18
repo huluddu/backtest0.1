@@ -226,6 +226,7 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
 # ✅ 전략 프리셋 목록 정의
 PRESETS = {
     "SOXL 매수/매도 추세 포함 전략": {
+        "signal_ticker": "SOXL", "trade_ticker": "SOXL",
         "ma_buy": 15, "offset_ma_buy": 15, "offset_cl_buy": 5,
         "ma_sell": 25, "offset_ma_sell": 1, "offset_cl_sell": 5,
         "ma_compare_short": 5, "ma_compare_long": 5,
@@ -236,6 +237,7 @@ PRESETS = {
     },
 
     "SOXL 익절 포함 최고 전략": {
+        "signal_ticker": "SOXL", "trade_ticker": "SOXL",
         "ma_buy": 25, "offset_ma_buy": 5, "offset_cl_buy": 25,
         "ma_sell": 25, "offset_ma_sell": 1, "offset_cl_sell": 1,
         "ma_compare_short": 25, "ma_compare_long": 25,
@@ -243,20 +245,76 @@ PRESETS = {
         "buy_operator": ">", "sell_operator": "<",
         "use_trend_in_buy": True, "use_trend_in_sell": False,
         "stop_loss_pct": 0.0, "take_profit_pct": 50.0
+    },
+
+    "SOXL 승률 전략": {
+        "signal_ticker": "SOXL", "trade_ticker": "SOXL",
+        "offset_cl_buy": 25, "buy_operator": ">", "offset_ma_buy": 25, "ma_buy": 15,
+        "offset_cl_sell": 25, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 10, 
+        "use_trend_in_buy": True, "use_trend_in_sell": True,
+        "offset_compare_short": 5, "ma_compare_short": 10,
+        "offset_compare_long": 1, "ma_compare_long": 10,         
+        "stop_loss_pct": 0.0, "take_profit_pct": 25.0
+    },
+
+    "SOXL 테스트 전략": {
+        "signal_ticker": "SOXL", "trade_ticker": "SOXL",
+        "offset_cl_buy": 15, "buy_operator": ">", "offset_ma_buy": 1, "ma_buy": 10,
+        "offset_cl_sell": 25, "sell_operator": "<", "offset_ma_sell": 15, "ma_sell": 25, 
+        "use_trend_in_buy": True, "use_trend_in_sell": False,
+        "offset_compare_short": 25, "ma_compare_short": 25,
+        "offset_compare_long": 1, "ma_compare_long": 25,         
+        "stop_loss_pct": 0.0, "take_profit_pct": 25.0
+    },
+
+    "SOXS를 SOXL 보고 사기 전략": {
+        "signal_ticker": "SOXL", "trade_ticker": "SOXS",
+        "offset_cl_buy": 5, "buy_operator": ">", "offset_ma_buy": 25, "ma_buy": 15,
+        "offset_cl_sell": 1, "sell_operator": "<", "offset_ma_sell": 5, "ma_sell": 10, 
+        "use_trend_in_buy": True, "use_trend_in_sell": False,
+        "offset_compare_short": 5, "ma_compare_short": 25,
+        "offset_compare_long": 1, "ma_compare_long": 25,         
+        "stop_loss_pct": 0.0, "take_profit_pct": 0.0
+    },
+
+    "465580 전략": {
+        "signal_ticker": "465580", "trade_ticker": "465580",
+        "ma_buy": 15, "offset_ma_buy": 5, "offset_cl_buy": 15,
+        "ma_sell": 25, "offset_ma_sell": 5, "offset_cl_sell": 1,
+        "ma_compare_short": 25, "ma_compare_long": 25,
+        "offset_compare_short": 25, "offset_compare_long": 1,
+        "buy_operator": "<", "sell_operator": "<",
+        "use_trend_in_buy": False, "use_trend_in_sell": False,
+        "stop_loss_pct": 0.0, "take_profit_pct": 50.0
     }
+
 }
 
 # ✅ UI 구성
 st.set_page_config(page_title="전략 백테스트", layout="wide")
 st.title("📊 전략 백테스트 웹앱")
 
+st.markdown("모든 매매는 종가 매매. n일전 데이터 기반으로 금일 종가 매매를 한다.")
 st.markdown("KODEX미국반도체 390390, KODEX미국나스닥100 379810, ACEKRX금현물 411060, ACE미국30년국채액티브(H) 453850, ACE미국빅테크TOP7Plus 465580")
+
+    # 📌 프리셋 선택 UI
+selected_preset = st.selectbox("🎯 전략 프리셋 선택", ["직접 설정"] + list(PRESETS.keys()))
+preset_values = {} if selected_preset == "직접 설정" else PRESETS[selected_preset]
+
 
 col1, col2 = st.columns(2)
 with col1:
-    signal_ticker = st.text_input("시그널 판단용 티커", value="SOXL")
+    signal_ticker = st.text_input(
+        "시그널 판단용 티커",
+        value=preset_values.get("signal_ticker", "SOXL"),
+        key="signal_ticker_input"      # ✅ 고유 key
+    )
 with col2:
-    trade_ticker = st.text_input("실제 매매 티커", value="SOXL")
+    trade_ticker = st.text_input(
+        "실제 매매 티커",
+        value=preset_values.get("trade_ticker", "SOXL"),
+        key="trade_ticker_input"       # ✅ 고유 key
+    )
 
 col3, col4 = st.columns(2)
 with col3:
@@ -265,9 +323,6 @@ with col4:
     end_date = st.date_input("종료일", value=datetime.date.today())
 
 with st.expander("📈 전략 조건 설정"):
-    # 📌 프리셋 선택 UI
-    selected_preset = st.selectbox("🎯 전략 프리셋 선택", ["직접 설정"] + list(PRESETS.keys()))
-    preset_values = {} if selected_preset == "직접 설정" else PRESETS[selected_preset]
 
     ops = [">", "<"]
 
@@ -595,7 +650,6 @@ def backtest_fast(
     }
 
 
-# ===== Fast Random Sims =====
 # ===== Fast Random Sims =====
 def run_random_simulations_fast(
     n_simulations, base, x_sig, x_trd, ma_dict_sig,
@@ -997,4 +1051,3 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     )
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
-
