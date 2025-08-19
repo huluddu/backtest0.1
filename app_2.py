@@ -305,7 +305,7 @@ st.set_page_config(page_title="전략 백테스트", layout="wide")
 st.title("📊 전략 백테스트 웹앱")
 
 st.markdown("모든 매매는 종가 매매. n일전 데이터 기반으로 금일 종가 매매를 한다.")
-st.markdown("KODEX미국반도체 390390, KODEX미국나스닥100 379810, ACEKRX금현물 411060, ACE미국30년국채액티브(H) 453850, ACE미국빅테크TOP7Plus 465580")
+st.markdown("KODEX미국반도체 390390, KDOEX인버스 114800, KODEX미국나스닥100 379810, ACEKRX금현물 411060, ACE미국30년국채액티브(H) 453850, ACE미국빅테크TOP7Plus 465580")
 
     # 📌 프리셋 선택 UI
 selected_preset = st.selectbox("🎯 전략 프리셋 선택", ["직접 설정"] + list(PRESETS.keys()))
@@ -1061,5 +1061,6 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     )
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
