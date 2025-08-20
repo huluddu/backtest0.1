@@ -175,9 +175,16 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
             trend_ok = False
 
     st.write(f"📈 추세 조건: {trend_msg}")
+              
+    if use_trend_in_buy:
+        buy_ok = cl_b > ma_b and trend_ok
+    else:
+        buy_ok = cl_b > ma_b
 
-    buy_ok = cl_b > ma_b and trend_ok
-    sell_ok = cl_s < ma_s
+    if use_trend_in_sell:
+        sell_ok = cl_s < ma_s and trend_ok
+    else:
+        sell_ok = cl_s < ma_s
 
     st.write(f"💡 매수판단: 종가({cl_b:.2f}) {'>' if cl_b > ma_b else '<='} MA({ma_b:.2f}) → {'매수조건 ✅' if buy_ok else '조건부족 ❌'}")
     st.write(f"💡 매도판단: 종가({cl_s:.2f}) {'<' if cl_s < ma_s else '>='} MA({ma_s:.2f}) → {'매도조건 ✅' if sell_ok else '조건부족 ❌'}")
@@ -1071,6 +1078,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     )
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
