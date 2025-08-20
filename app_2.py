@@ -306,13 +306,12 @@ PRESETS = {
 
     "465580 전략": {
         "signal_ticker": "465580", "trade_ticker": "465580",
-        "ma_buy": 15, "offset_ma_buy": 5, "offset_cl_buy": 15,
-        "ma_sell": 25, "offset_ma_sell": 5, "offset_cl_sell": 1,
-        "ma_compare_short": 25, "ma_compare_long": 25,
-        "offset_compare_short": 25, "offset_compare_long": 1,
-        "buy_operator": "<", "sell_operator": "<",
-        "use_trend_in_buy": False, "use_trend_in_sell": False,
-        "stop_loss_pct": 0.0, "take_profit_pct": 50.0
+        "offset_cl_buy": 5, "buy_operator": "<", "offset_ma_buy": 1, "ma_buy": 10,
+        "offset_cl_sell": 1, "sell_operator": "<", "offset_ma_sell": 25, "ma_sell": 5, 
+        "use_trend_in_buy": True, "use_trend_in_sell": True,
+        "offset_compare_short": 5, "ma_compare_short": 10,
+        "offset_compare_long": 1, "ma_compare_long": 10,         
+        "stop_loss_pct": 0.0, "take_profit_pct": 25.0
     }
 
 }
@@ -668,10 +667,10 @@ def backtest_fast(
         "MDD (%)": round(mdd, 2),
         "중앙값 거래당 수익률 (%)": median_trade_return_pct,
         "Profit Factor": profit_factor,
+        "총 매매 횟수": total_trades,
         "MDD 발생일": mdd_date.strftime("%Y-%m-%d"),
         "MDD 회복일": recovery_date.strftime("%Y-%m-%d") if recovery_date is not None else "미회복",
         "회복 기간 (일)": (recovery_date - mdd_date).days if recovery_date is not None else None,
-        "총 매매 횟수": total_trades,
         "매매 로그": logs,
         "최종 자산": round(final_asset)
     }
@@ -1078,6 +1077,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     )
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
