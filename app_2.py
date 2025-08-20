@@ -164,15 +164,15 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
 
     trend_ok = True
     trend_msg = "비활성화"
-    if ma_compare_short and ma_compare_long:
+    if use_trend_in_buy or use_trend_in_sell:
         try:
             ma_short = float(df["MA_SHORT"].iloc[i - offset_compare_short])
             ma_long = float(df["MA_LONG"].iloc[i - offset_compare_long])
             trend_ok = ma_short >= ma_long
-            trend_msg = f"{ma_short:.2f} vs {ma_long:.2f} → {'통과 ✅' if trend_ok else '미통과 ❌'}"
+            trend_msg = f"{ma_short:.2f} vs {ma_long:.2f} → {'매수추세' if trend_ok else '매도추세'}"
         except:
             trend_msg = "❗데이터 부족"
-            trend_ok = False
+            #trend_ok = False
 
     st.write(f"📈 추세 조건: {trend_msg}")
               
@@ -182,7 +182,7 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
         buy_ok = cl_b > ma_b
 
     if use_trend_in_sell:
-        sell_ok = cl_s < ma_s and trend_ok
+        sell_ok = cl_s < ma_s and not trend_ok
     else:
         sell_ok = cl_s < ma_s
 
@@ -1078,6 +1078,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     )
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
