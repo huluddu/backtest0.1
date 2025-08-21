@@ -291,7 +291,7 @@ PRESETS = {
         "use_trend_in_buy": True, "use_trend_in_sell": True,
         "offset_compare_short": 25, "ma_compare_short": 15,
         "offset_compare_long": 1, "ma_compare_long": 15,         
-        "stop_loss_pct": 0.0, "take_profit_pct": 50.0
+        "stop_loss_pct": 0.0, "take_profit_pct": 0.0
     },
       
     "SOXS를 SOXL 보고 사기 전략": {
@@ -1077,6 +1077,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     )
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
