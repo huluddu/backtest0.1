@@ -344,7 +344,7 @@ with col2:
 
 col3, col4 = st.columns(2)
 with col3:
-    start_date = st.date_input("시작일", value=datetime.date(2021, 1, 1))
+    start_date = st.date_input("시작일", value=datetime.date(2010, 1, 1))
 with col4:
     end_date = st.date_input("종료일", value=datetime.date.today())
 
@@ -1077,6 +1077,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     )
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
