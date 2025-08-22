@@ -1090,25 +1090,28 @@ def _parse_list(text, typ="int"):
 with st.expander("🎲 랜덤 시뮬 변수 후보 입력", expanded=False):
     colL, colR = st.columns(2)
     with colL:
-        txt_ma_buy            = st.text_input("ma_buy 후보",            "5,10,15,20,25")
-        txt_offset_ma_buy     = st.text_input("offset_ma_buy 후보",     "1,5,15,25")
         txt_offset_cl_buy     = st.text_input("offset_cl_buy 후보",     "1,5,15,25")
         txt_buy_op            = st.text_input("buy_operator 후보",      ">,<")
+        txt_offset_ma_buy     = st.text_input("offset_ma_buy 후보",     "1,5,15,25")
+        txt_ma_buy            = st.text_input("ma_buy 후보",            "5,10,15,20,25")
 
-        txt_ma_cmp_s          = st.text_input("ma_compare_short 후보",  "5,10,15,20,25")
-        txt_ma_cmp_l          = st.text_input("ma_compare_long 후보",   "same")
-        txt_off_cmp_s         = st.text_input("offset_compare_short 후보", "1,5,15,25")
-        txt_off_cmp_l         = st.text_input("offset_compare_long 후보",  "1")
-    with colR:
-        txt_ma_sell           = st.text_input("ma_sell 후보",           "5,10,15,20,25")
-        txt_offset_ma_sell    = st.text_input("offset_ma_sell 후보",    "1,5,15,25")
         txt_offset_cl_sell    = st.text_input("offset_cl_sell 후보",    "1,5,15,25")
         txt_sell_op           = st.text_input("sell_operator 후보",     "<,>")
+        txt_offset_ma_sell    = st.text_input("offset_ma_sell 후보",    "1,5,15,25")
+        txt_ma_sell           = st.text_input("ma_sell 후보",           "5,10,15,20,25")
+
+    with colR:
+        txt_off_cmp_s         = st.text_input("offset_compare_short 후보", "1,5,15,25")
+        txt_ma_cmp_s          = st.text_input("ma_compare_short 후보",  "5,10,15,20,25")
+        txt_off_cmp_l         = st.text_input("offset_compare_long 후보",  "1")
+        txt_ma_cmp_l          = st.text_input("ma_compare_long 후보",   "same")
 
         txt_use_trend_buy     = st.text_input("use_trend_in_buy 후보(True/False)",  "True,False")
         txt_use_trend_sell    = st.text_input("use_trend_in_sell 후보(True/False)", "True,False")
-        txt_stop_loss         = st.text_input("stop_loss_pct 후보(%)",  "0")
-        txt_take_profit       = st.text_input("take_profit_pct 후보(%)","0,25,50")
+        txt_stop_loss         = st.text_input("stop_loss_pct 후보(%)",  "0,30")
+        txt_take_profit       = st.text_input("take_profit_pct 후보(%)","0,30,50")
+
+    n_simulations = st.number_input("시뮬레이션 횟수", value=100, min_value=1, step=10)
 
 choices_dict = {
     "ma_buy":               _parse_list(txt_ma_buy, "int"),
@@ -1134,8 +1137,7 @@ choices_dict = {
 }
 
 
-if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
-    # 랜덤 가능성 있는 MA 윈도우 풀
+if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     ma_pool = [5, 10, 15, 25, 50]
     base, x_sig, x_trd, ma_dict_sig = prepare_base(
         signal_ticker, trade_ticker, start_date, end_date, ma_pool
@@ -1143,23 +1145,10 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     if seed:
         random.seed(int(seed))
     df_sim = run_random_simulations_fast(
-        100, base, x_sig, x_trd, ma_dict_sig,
+        int(n_simulations), base, x_sig, x_trd, ma_dict_sig,
         initial_cash=initial_cash_ui, fee_bps=fee_bps, slip_bps=slip_bps,
-        choices_dict=choices_dict  # ✅ 추가 전달
+        choices_dict=choices_dict
     )
-    st.subheader("📈 랜덤 전략 시뮬레이션 결과")
+    st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
-
-
-
-
-
-
-
-
-
-
-
-
-
 
