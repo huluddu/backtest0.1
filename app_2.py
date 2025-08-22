@@ -73,28 +73,38 @@ def _fast_ma(x: np.ndarray, w: int) -> np.ndarray:
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_krx_data_cached(ticker: str, start_date, end_date):
-    """KRX(숫자티커)용: pykrx에서 종가만 가져와 정리"""
-    df = stock.get_etf_ohlcv_by_date(start_date.strftime("%Y%m%d"),
-                                     end_date.strftime("%Y%m%d"),
-                                     ticker)
-    df = df[["종가"]].reset_index().rename(columns={"날짜": "Date", "종가": "Close"})
+    """KRX(숫자티커)용: OHLC 로딩 (손절/익절 장중체크용)"""
+    df = stock.get_etf_ohlcv_by_date(
+        start_date.strftime("%Y%m%d"),
+        end_date.strftime("%Y%m%d"),
+        ticker
+    )
+    df = df.reset_index().rename(columns={
+        "날짜": "Date", "시가": "Open", "고가": "High", "저가": "Low", "종가": "Close"
+    })
+    df = df[["Date", "Open", "High", "Low", "Close"]].dropna()
     return df
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_yf_data_cached(ticker: str, start_date, end_date):
-    """야후파이낸스용: Close만 단일 컬럼으로 정리"""
+    """야후파이낸스용: OHLC 로딩 (손절/익절 장중체크용)"""
     df = yf.download(ticker, start=start_date, end=end_date)
     if isinstance(df.columns, pd.MultiIndex):
-        # 티커 멀티컬럼 보정
-        if ("Close", ticker.upper()) in df.columns:
-            df = df[("Close", ticker.upper())]
-        elif "Close" in df.columns.get_level_values(0):
-            df = df["Close"]
-        df = df.to_frame(name="Close")
-    elif isinstance(df, pd.Series):
-        df = df.to_frame(name="Close")
-    df = df[["Close"]].dropna().reset_index()
-    df.columns = ["Date", "Close"]
+        tu = ticker.upper()
+        try:
+            o = df[("Open",  tu)]
+            h = df[("High",  tu)]
+            l = df[("Low",   tu)]
+            c = df[("Close", tu)]
+            df = pd.concat([o, h, l, c], axis=1)
+            df.columns = ["Open", "High", "Low", "Close"]
+        except Exception:
+            # 멀티컬럼 구조가 다를 때의 안전장치
+            df = df.droplevel(1, axis=1)[["Open", "High", "Low", "Close"]]
+    else:
+        df = df[["Open", "High", "Low", "Close"]]
+    df = df.reset_index().rename(columns={"Date": "Date"})
+    df = df[["Date", "Open", "High", "Low", "Close"]].dropna()
     return df
 
 def get_data(ticker: str, start_date, end_date) -> pd.DataFrame:
@@ -112,10 +122,19 @@ def get_data(ticker: str, start_date, end_date) -> pd.DataFrame:
 # ===== Base prepare =====
 @st.cache_data(show_spinner=False, ttl=1800)
 def prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool):
-    """한 번에 머지 + 필요한 모든 MA(신호용) 미리 계산"""
+    """신호용 Close + 트레이드용 OHLC 병합 및 신속 MA 계산"""
     sig = get_data(signal_ticker, start_date, end_date).sort_values("Date")
-    trd = get_data(trade_ticker, start_date, end_date).sort_values("Date")
-    base = pd.merge(sig, trd, on="Date", suffixes=("_sig", "_trd"), how="inner").dropna().reset_index(drop=True)
+    trd = get_data(trade_ticker,  start_date, end_date).sort_values("Date")
+
+    # 신호는 Close만 쓰도록 명시
+    sig = sig.rename(columns={"Close": "Close_sig"})[["Date", "Close_sig"]]
+    # 트레이드는 OHLC 전부 사용 (장중 체결용)
+    trd = trd.rename(columns={
+        "Open": "Open_trd", "High": "High_trd",
+        "Low": "Low_trd",   "Close": "Close_trd"
+    })[["Date", "Open_trd", "High_trd", "Low_trd", "Close_trd"]]
+
+    base = pd.merge(sig, trd, on="Date", how="inner").dropna().reset_index(drop=True)
 
     x_sig = base["Close_sig"].to_numpy(dtype=float)
     x_trd = base["Close_trd"].to_numpy(dtype=float)
@@ -320,7 +339,7 @@ PRESETS = {
 st.set_page_config(page_title="전략 백테스트", layout="wide")
 st.title("📊 전략 백테스트 웹앱")
 
-st.markdown("모든 매매는 종가 매매. n일전 데이터 기반으로 금일 종가 매매를 한다.")
+st.markdown("모든 매매는 종가 매매이나, 손절,익절은 장중 시가. n일전 데이터 기반으로 금일 종가 매매를 한다.")
 st.markdown("KODEX미국반도체 390390, KDOEX인버스 114800, KODEX미국나스닥100 379810, ACEKRX금현물 411060, ACE미국30년국채액티브(H) 453850, ACE미국빅테크TOP7Plus 465580")
 
     # 📌 프리셋 선택 UI
@@ -448,6 +467,11 @@ def backtest_fast(
         (offset_compare_short or 0), (offset_compare_long or 0)
     )
 
+    # === 트레이드 OHLC 배열 (intraday 체크용) ===
+    xO = base["Open_trd"].to_numpy(dtype=float)
+    xH = base["High_trd"].to_numpy(dtype=float)
+    xL = base["Low_trd"].to_numpy(dtype=float)
+
     # ===== 변수 =====
     cash = float(initial_cash)
     position = 0.0
@@ -462,10 +486,57 @@ def backtest_fast(
     def _fill_sell(px: float) -> float:
         return px * (1 - (slip_bps + fee_bps) / 10000.0)
 
+    def _check_intraday_exit(buy_px, o, h, l):
+        """장중 손절/익절 체결 체크.
+        - 갭: 시가가 기준선을 넘어선 경우 시가 체결
+        - 장중: 해당선 터치 시 선 가격 체결
+        - 동시 터치: '손절 우선'
+        """
+        if buy_px is None:
+            return False, False, None
+
+        stop_trigger = False
+        take_trigger = False
+        fill_px = None
+
+        if stop_loss_pct > 0:
+            stop_line = buy_px * (1 - stop_loss_pct / 100.0)
+            if o <= stop_line:
+                stop_trigger = True
+                fill_px = o
+            elif l <= stop_line:
+                stop_trigger = True
+                fill_px = stop_line
+
+        if take_profit_pct > 0:
+            take_line = buy_px * (1 + take_profit_pct / 100.0)
+            if o >= take_line:
+                # 갭상승 -> 시가 체결 (익절)
+                if not stop_trigger:
+                    take_trigger = True
+                    fill_px = o
+                # stop_trigger도 True이면 아래 동시터치 처리에서 정리
+            elif h >= take_line:
+                if not stop_trigger:  # 이미 stop이 잡혔으면 우선권은 stop
+                    take_trigger = True
+                    fill_px = take_line
+
+        # 같은 날 둘 다 터치된 경우 우선순위: 손절 우선
+        if stop_trigger and take_trigger:
+            stop_line = buy_px * (1 - stop_loss_pct / 100.0)
+            take_line = buy_px * (1 + take_profit_pct / 100.0)
+            # 시가가 둘 중 하나를 이미 넘은 경우는 위에서 처리됨.
+            # 그 외에는 보수적으로 stop 우선
+            fill_px = stop_line
+            take_trigger = False
+
+        return stop_trigger, take_trigger, fill_px
+
     for i in range(idx0, n):
         just_bought = False
+        exec_price = None  # 이번 턴 체결가(있으면 기록)
 
-        # 값 가져오기 (iloc 금지, 배열 인덱싱)
+        # 값 가져오기
         try:
             cl_b = float(x_sig[i - offset_cl_buy])
             ma_b = float(ma_buy_arr[i - offset_ma_buy])
@@ -481,108 +552,106 @@ def backtest_fast(
             ml = ma_l_arr[i - offset_compare_long]  if i - offset_compare_long  >= 0 else np.nan
             trend_ok = (np.isfinite(ms) and np.isfinite(ml) and ms >= ml)
 
+        open_today  = xO[i]
+        high_today  = xH[i]
+        low_today   = xL[i]
         close_today = x_trd[i]
-        profit_pct = ((close_today - buy_price) / buy_price * 100) if buy_price else 0.0
+        profit_pct  = ((close_today - buy_price) / buy_price * 100) if buy_price else 0.0
 
         # ===== 조건 계산 =====
         signal = "HOLD"
-        
-        if buy_operator == ">":
-            buy_base = (cl_b > ma_b)
-        else:
-            buy_base = (cl_b < ma_b)
-            
-        if use_trend_in_buy:
-            buy_condition = buy_base and trend_ok
-        else:
-            buy_condition = buy_base
-            
-        if sell_operator == "<":
-            sell_base = (cl_s < ma_s)
-        else:
-            sell_base = (cl_s > ma_s)
-            
-        if use_trend_in_sell:
-            sell_condition = sell_base and not trend_ok
-        else:
-            sell_condition = sell_base
-            
-        
-        stop_hit = (stop_loss_pct > 0 and profit_pct <= -stop_loss_pct)
-        take_hit = (take_profit_pct > 0 and profit_pct >= take_profit_pct)
+
+        # 매수/매도 기본 시그널
+        buy_base  = (cl_b > ma_b) if (buy_operator == ">") else (cl_b < ma_b)
+        sell_base = (cl_s < ma_s) if (sell_operator == "<") else (cl_s > ma_s)
+
+        buy_condition  = (buy_base and trend_ok) if use_trend_in_buy  else buy_base
+        sell_condition = (sell_base and (not trend_ok)) if use_trend_in_sell else sell_base
+
+        # ===== Intraday 손절/익절 체크 =====
+        stop_hit, take_hit, intraday_px = (False, False, None)
+        if position > 0.0 and (stop_loss_pct > 0 or take_profit_pct > 0):
+            stop_hit, take_hit, intraday_px = _check_intraday_exit(buy_price, open_today, high_today, low_today)
 
         base_sell = (sell_condition or stop_hit or take_hit)
-        can_sell = (position > 0.0) and base_sell and (hold_days >= min_hold_days)
+        can_sell  = (position > 0.0) and base_sell and (hold_days >= min_hold_days)
         if stop_hit or take_hit:
-            can_sell = True
+            can_sell = True  # 손절/익절은 최소보유일 무시
 
+        # ===== 체결 =====
         if sb == "1":
             if buy_condition and sell_condition:
                 if position == 0.0:
                     fill = _fill_buy(close_today)
                     position = cash / fill; cash = 0.0
-                    signal = "BUY"; buy_price = fill
+                    signal = "BUY"; buy_price = fill; exec_price = fill
                     hold_days = 0; just_bought = True
                 else:
-                    if hold_days >= min_hold_days:
-                        fill = _fill_sell(close_today)
+                    if can_sell:
+                        # 손절/익절 우선 체결가 사용
+                        px = intraday_px if (stop_hit or take_hit) and intraday_px is not None else close_today
+                        fill = _fill_sell(px)
                         cash = position * fill; position = 0.0
-                        signal = "SELL"; buy_price = None
+                        signal = "SELL"; buy_price = None; exec_price = fill
                     else:
                         signal = "HOLD"
 
             elif position == 0.0 and buy_condition:
                 fill = _fill_buy(close_today)
                 position = cash / fill; cash = 0.0
-                signal = "BUY"; buy_price = fill
+                signal = "BUY"; buy_price = fill; exec_price = fill
                 hold_days = 0; just_bought = True
 
             elif can_sell:
-                fill = _fill_sell(close_today)
+                px = intraday_px if (stop_hit or take_hit) and intraday_px is not None else close_today
+                fill = _fill_sell(px)
                 cash = position * fill; position = 0.0
-                signal = "SELL"; buy_price = None
+                signal = "SELL"; buy_price = None; exec_price = fill
 
         elif sb == "2":
             if buy_condition and sell_condition:
                 if position == 0.0:
                     fill = _fill_buy(close_today)
                     position = cash / fill; cash = 0.0
-                    signal = "BUY"; buy_price = fill
+                    signal = "BUY"; buy_price = fill; exec_price = fill
                     hold_days = 0; just_bought = True
                 else:
                     signal = "HOLD"
             elif position == 0.0 and buy_condition:
                 fill = _fill_buy(close_today)
                 position = cash / fill; cash = 0.0
-                signal = "BUY"; buy_price = fill
+                signal = "BUY"; buy_price = fill; exec_price = fill
                 hold_days = 0; just_bought = True
             elif can_sell:
-                fill = _fill_sell(close_today)
+                px = intraday_px if (stop_hit or take_hit) and intraday_px is not None else close_today
+                fill = _fill_sell(px)
                 cash = position * fill; position = 0.0
-                signal = "SELL"; buy_price = None
+                signal = "SELL"; buy_price = None; exec_price = fill
 
         else:  # '3'
             if buy_condition and sell_condition:
                 if position == 0.0:
                     signal = "HOLD"
                 else:
-                    if hold_days >= min_hold_days:
-                        fill = _fill_sell(close_today)
+                    if can_sell:
+                        px = intraday_px if (stop_hit or take_hit) and intraday_px is not None else close_today
+                        fill = _fill_sell(px)
                         cash = position * fill; position = 0.0
-                        signal = "SELL"; buy_price = None
+                        signal = "SELL"; buy_price = None; exec_price = fill
                     else:
                         signal = "HOLD"
             elif buy_condition and position == 0.0:
                 fill = _fill_buy(close_today)
                 position = cash / fill; cash = 0.0
-                signal = "BUY"; buy_price = fill
+                signal = "BUY"; buy_price = fill; exec_price = fill
                 hold_days = 0; just_bought = True
             elif can_sell:
-                fill = _fill_sell(close_today)
+                px = intraday_px if (stop_hit or take_hit) and intraday_px is not None else close_today
+                fill = _fill_sell(px)
                 cash = position * fill; position = 0.0
-                signal = "SELL"; buy_price = None
+                signal = "SELL"; buy_price = None; exec_price = fill
 
-        # ✅ 체결 후 카운터 업데이트 (이중 증가 방지)
+        # 보유일 카운터
         if position > 0.0:
             if not just_bought:
                 hold_days += 1
@@ -594,7 +663,8 @@ def backtest_fast(
 
         logs.append({
             "날짜": pd.to_datetime(base["Date"].iloc[i]).strftime("%Y-%m-%d"),
-            "종가": round(close_today, 2),
+            "종가": round(close_today, 2),       # 차트 표시는 종가 기준
+            "체결가": round(exec_price, 4) if exec_price is not None else None,  # 실제 체결가 기록
             "신호": signal,
             "자산": round(total),
             "매수시그널": buy_condition,
@@ -602,10 +672,10 @@ def backtest_fast(
             "손절발동": bool(stop_hit),
             "익절발동": bool(take_hit),
             "추세만족": bool(trend_ok),
-            "매수가격비교": round(cl_b - ma_b, 6),   # (+면 종가>MA)
-            "매도가격비교": round(cl_s - ma_s, 6),   # (-면 종가<MA)
-            "매수이유": (f"종가({cl_b:.2f}) > MA_BUY({ma_b:.2f})" + (" + 추세필터 통과" if trend_ok else " + 추세필터 불통과")) if buy_condition else "",
-            "매도이유": (f"종가({cl_s:.2f}) < MA_SELL({ma_s:.2f})") if sell_condition else "",
+            "매수가격비교": round(cl_b - ma_b, 6),
+            "매도가격비교": round(cl_s - ma_s, 6),
+            "매수이유": (f"종가({cl_b:.2f}) {'>' if buy_operator=='>' else '<'} MA_BUY({ma_b:.2f})" + (" + 추세필터 통과" if trend_ok else " + 추세필터 불통과")) if buy_condition else "",
+            "매도이유": (f"종가({cl_s:.2f}) {'<' if sell_operator=='<' else '>'} MA_SELL({ma_s:.2f})") if sell_condition else "",
             "양시그널": buy_condition and sell_condition,
             "보유일": hold_days
         })
@@ -628,7 +698,7 @@ def backtest_fast(
             recovery_date = pd.to_datetime(df["Date"].iloc[j])
             break
 
-    # 승률
+    # 승률/Profit Factor (이제 체결가 기준으로 재계산)
     trade_pairs, cache_buy = [], None
     for log in logs:
         if log["신호"] == "BUY":
@@ -636,30 +706,31 @@ def backtest_fast(
         elif log["신호"] == "SELL" and cache_buy:
             trade_pairs.append((cache_buy, log))
             cache_buy = None
-    wins = sum(1 for b, s in trade_pairs if s["종가"] > b["종가"])
-    total_trades = len(trade_pairs)
-    win_rate = round((wins / total_trades) * 100, 2) if total_trades else 0.0
-
-    initial_cash_val = float(initial_cash)
-    final_asset = float(asset_curve[-1])
-
-        # ---- 거래당 수익률/Profit Factor 계산 추가 ----
-    trade_returns = []   # 각 거래의 수익률(소수, 예: 0.0123 = 1.23%)
-    gross_profit = 0.0   # 수익 거래들의 수익률 합
-    gross_loss = 0.0     # 손실 거래들의 손실률 합(양수로 누적)
+    wins = 0
+    trade_returns = []
+    gross_profit = 0.0
+    gross_loss = 0.0
 
     for b, s in trade_pairs:
-        r = (s["종가"] - b["종가"]) / b["종가"]
+        pb = b["체결가"] if b["체결가"] else b["종가"]
+        ps = s["체결가"] if s["체결가"] else s["종가"]
+        r = (ps - pb) / pb
         trade_returns.append(r)
         if r >= 0:
+            wins += 1
             gross_profit += r
         else:
             gross_loss += (-r)
 
+    total_trades = len(trade_pairs)
+    win_rate = round((wins / total_trades) * 100, 2) if total_trades else 0.0
     avg_trade_return_pct = round((np.mean(trade_returns) * 100), 2) if trade_returns else 0.0
     median_trade_return_pct = round((np.median(trade_returns) * 100), 2) if trade_returns else 0.0
     profit_factor = round((gross_profit / gross_loss), 2) if gross_loss > 0 else (float("inf") if gross_profit > 0 else 0.0)
-    
+
+    initial_cash_val = float(initial_cash)
+    final_asset = float(asset_curve[-1])
+
     return {
         "평균 거래당 수익률 (%)": avg_trade_return_pct,
         "수익률 (%)": round((final_asset - initial_cash_val) / initial_cash_val * 100, 2),
@@ -674,7 +745,6 @@ def backtest_fast(
         "매매 로그": logs,
         "최종 자산": round(final_asset)
     }
-
 
 # ===== Fast Random Sims =====
 def run_random_simulations_fast(
@@ -961,12 +1031,14 @@ if st.button("✅ 백테스트 실행"):
             if r["신호"] == "BUY":
                 buy_cache = r
             elif r["신호"] == "SELL" and buy_cache is not None:
-                pnl = (r["종가"] - buy_cache["종가"]) / buy_cache["종가"] * 100
+                pb = buy_cache["체결가"] if pd.notna(buy_cache.get("체결가")) else buy_cache["종가"]
+                ps = r["체결가"] if pd.notna(r.get("체결가")) else r["종가"]
+                pnl = (ps - pb) / pb * 100
                 pairs.append({
                     "진입일": buy_cache["날짜"],
                     "청산일": r["날짜"],
-                    "진입가": buy_cache["종가"],
-                    "청산가": r["종가"],
+                    "진입가(체결가)": round(pb, 4),
+                    "청산가(체결가)": round(ps, 4),
                     "보유일": r["보유일"],
                     "수익률(%)": round(pnl, 2),
                     "청산이유": "손절" if r["손절발동"] else ("익절" if r["익절발동"] else "규칙매도")
@@ -974,7 +1046,7 @@ if st.button("✅ 백테스트 실행"):
                 buy_cache = None
 
         if pairs:
-            st.subheader("🧾 트레이드 요약")
+            st.subheader("🧾 트레이드 요약 (체결가 기준)")
             st.dataframe(pd.DataFrame(pairs))
 
         # 다운로드 버튼 (로그)
@@ -1077,6 +1149,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     )
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
