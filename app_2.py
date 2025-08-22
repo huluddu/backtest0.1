@@ -251,7 +251,7 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
 
 # ✅ 전략 프리셋 목록 정의
 PRESETS = {
-    "SOXL 매수/매도 추세 포함 전략": {
+    "SOXL 전략1": {
         "signal_ticker": "SOXL", "trade_ticker": "SOXL",
         "ma_buy": 15, "offset_ma_buy": 15, "offset_cl_buy": 5,
         "ma_sell": 25, "offset_ma_sell": 1, "offset_cl_sell": 5,
@@ -259,10 +259,10 @@ PRESETS = {
         "offset_compare_short": 25, "offset_compare_long": 1,
         "buy_operator": "<", "sell_operator": "<",
         "use_trend_in_buy": True, "use_trend_in_sell": True,
-        "stop_loss_pct": 0.0, "take_profit_pct": 0.0
+        "stop_loss_pct": 0.0, "take_profit_pct": 30.0
     },
 
-    "SOXL 익절 포함 최고 전략": {
+    "SOXL 전략2": {
         "signal_ticker": "SOXL", "trade_ticker": "SOXL",
         "ma_buy": 25, "offset_ma_buy": 5, "offset_cl_buy": 25,
         "ma_sell": 25, "offset_ma_sell": 1, "offset_cl_sell": 1,
@@ -270,7 +270,7 @@ PRESETS = {
         "offset_compare_short": 25, "offset_compare_long": 1,
         "buy_operator": ">", "sell_operator": "<",
         "use_trend_in_buy": True, "use_trend_in_sell": False,
-        "stop_loss_pct": 0.0, "take_profit_pct": 50.0
+        "stop_loss_pct": 20.0, "take_profit_pct": 50.0
     },
 
     "390390 전략": {
@@ -285,11 +285,11 @@ PRESETS = {
 
     "SOXS 전략": {
         "signal_ticker": "SOXS", "trade_ticker": "SOXS",
-        "offset_cl_buy": 5, "buy_operator": ">", "offset_ma_buy": 15, "ma_buy": 10,
-        "offset_cl_sell": 1, "sell_operator": "<", "offset_ma_sell": 5, "ma_sell": 5, 
+        "offset_cl_buy": 1, "buy_operator": ">", "offset_ma_buy": 15, "ma_buy": 5,
+        "offset_cl_sell": 5, "sell_operator": ">", "offset_ma_sell": 15, "ma_sell": 10, 
         "use_trend_in_buy": True, "use_trend_in_sell": False,
-        "offset_compare_short": 15, "ma_compare_short": 5,
-        "offset_compare_long": 1, "ma_compare_long": 5,         
+        "offset_compare_short": 5, "ma_compare_short": 15,
+        "offset_compare_long": 1, "ma_compare_long": 15,         
         "stop_loss_pct": 3.0, "take_profit_pct": 30.0
     },
 
@@ -1149,6 +1149,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 (100회 실행)"):
     )
     st.subheader("📈 랜덤 전략 시뮬레이션 결과")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
