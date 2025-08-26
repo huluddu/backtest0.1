@@ -375,9 +375,15 @@ with col2:
 
 col3, col4 = st.columns(2)
 with col3:
-    start_date = st.date_input("시작일", value=datetime.date(2010, 1, 1))
+    start_date = st.date_input("시작일", value=datetime.date(2010, 1, 1),
+                               min_value=datetime.date(1990, 1, 1),
+                               max_value=datetime.date.today()
+                              )
 with col4:
-    end_date = st.date_input("종료일", value=datetime.date.today())
+    end_date = st.date_input("종료일", value=datetime.date.today(),
+                             min_value=start_date,
+                             max_value=datetime.date.today()
+                            )
 
 with st.expander("📈 전략 조건 설정"):
 
@@ -1165,6 +1171,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     )
     st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
