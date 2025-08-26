@@ -207,8 +207,6 @@ def check_signal_today(
     buy_ok  = (buy_base  and trend_ok)      if use_trend_in_buy  else buy_base
     sell_ok = (sell_base and (not trend_ok)) if use_trend_in_sell else sell_base
 
-
-    if 
     st.write(f"💡 매수판단: 종가({cl_b:.2f}) "
              f"{'>' if buy_operator=='>' else '<'} MA({ma_b:.2f})"
              f"{' + 추세필터' if use_trend_in_buy else ''} → "
@@ -1167,4 +1165,5 @@ if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     )
     st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
