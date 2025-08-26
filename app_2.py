@@ -151,11 +151,16 @@ def get_mdd(asset_curve):
     drawdown = (asset_curve - peak) / peak
     return drawdown.min() * 100
 
-
-def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
-                       offset_cl_buy, offset_cl_sell,
-                       ma_compare_short=None, ma_compare_long=None,
-                       offset_compare_short=1, offset_compare_long=1):
+### 오늘의 시그널 ####
+def check_signal_today(
+    df,
+    ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
+    offset_cl_buy, offset_cl_sell,
+    ma_compare_short=None, ma_compare_long=None,
+    offset_compare_short=1, offset_compare_long=1,
+    buy_operator=">", sell_operator="<",
+    use_trend_in_buy=True, use_trend_in_sell=False
+):
 
     df = df.copy()
     df = df.sort_values("Date").reset_index(drop=True)
@@ -194,20 +199,26 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
             #trend_ok = False
 
     st.write(f"📈 추세 조건: {trend_msg}")
-              
-    if use_trend_in_buy:
-        buy_ok = cl_b > ma_b and trend_ok
-    else:
-        buy_ok = cl_b > ma_b
 
-    if use_trend_in_sell:
-        sell_ok = cl_s < ma_s and not trend_ok
-    else:
-        sell_ok = cl_s < ma_s
+# ▶ 부호/추세 반영한 판정
+    buy_base  = (cl_b > ma_b) if (buy_operator == ">") else (cl_b < ma_b)
+    sell_base = (cl_s < ma_s) if (sell_operator == "<") else (cl_s > ma_s)
 
-    st.write(f"💡 매수판단: 종가({cl_b:.2f}) {'>' if cl_b > ma_b else '<='} MA({ma_b:.2f}) → {'매수조건 ✅' if buy_ok else '조건부족 ❌'}")
-    st.write(f"💡 매도판단: 종가({cl_s:.2f}) {'<' if cl_s < ma_s else '>='} MA({ma_s:.2f}) → {'매도조건 ✅' if sell_ok else '조건부족 ❌'}")
+    buy_ok  = (buy_base  and trend_ok)      if use_trend_in_buy  else buy_base
+    sell_ok = (sell_base and (not trend_ok)) if use_trend_in_sell else sell_base
 
+
+    if 
+    st.write(f"💡 매수판단: 종가({cl_b:.2f}) "
+             f"{'>' if buy_operator=='>' else '<'} MA({ma_b:.2f})"
+             f"{' + 추세필터' if use_trend_in_buy else ''} → "
+             f"{'매수조건 ✅' if buy_ok else '조건부족 ❌'}")
+
+    st.write(f"💡 매도판단: 종가({cl_s:.2f}) "
+             f"{'<' if sell_operator=='<' else '>'} MA({ma_s:.2f})"
+             f"{' + 역추세필터' if use_trend_in_sell else ''} → "
+             f"{'매도조건 ✅' if sell_ok else '조건부족 ❌'}")
+    
     if buy_ok:
         st.success("📈 오늘은 매수 시그널입니다!")
     elif sell_ok:
@@ -228,14 +239,19 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
             trend_pass = True
             if ma_compare_short and ma_compare_long:
                 ms_short = df["MA_SHORT"].iloc[j - offset_compare_short]
-                ms_long = df["MA_LONG"].iloc[j - offset_compare_long]
-                trend_pass = ms_short >= ms_long
+                ms_long  = df["MA_LONG"].iloc[j - offset_compare_long]
+                trend_pass = (ms_short >= ms_long)
 
-            if last_buy_date is None and cb > mb and trend_pass:
+            _buy_base  = (cb > mb) if (buy_operator == ">") else (cb < mb)
+            _sell_base = (cs < ms) if (sell_operator == "<") else (cs > ms)
+
+            _buy_ok  = (_buy_base  and trend_pass)      if use_trend_in_buy  else _buy_base
+            _sell_ok = (_sell_base and (not trend_pass)) if use_trend_in_sell else _sell_base
+
+            if last_buy_date is None and _buy_ok:
                 last_buy_date = df["Date"].iloc[j]
-            if last_sell_date is None and cs < ms:
+            if last_sell_date is None and _sell_ok:
                 last_sell_date = df["Date"].iloc[j]
-
             if last_buy_date and last_sell_date:
                 break
         except:
@@ -247,7 +263,6 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
         st.write(f"🗓 마지막 매도 조건 만족: {last_sell_date.strftime('%Y-%m-%d')}")
     if not last_buy_date and not last_sell_date:
         st.warning("❗최근 매수/매도 조건에 부합한 날이 없습니다.")
-
 
 # ✅ 전략 프리셋 목록 정의
 PRESETS = {
@@ -381,9 +396,9 @@ with st.expander("📈 전략 조건 설정"):
         st.markdown("---")
         use_trend_in_buy = st.checkbox("매수에 추세필터 적용", value=preset_values.get("use_trend_in_buy", True))
         offset_compare_short = st.number_input("□일 전", key="offset_compare_short", value=preset_values.get("offset_compare_short", 25))
-        ma_compare_short = st.number_input("□일 이동평균선보다", key="ma_compare_short", value=preset_values.get("ma_compare_short", 25))
+        ma_compare_short = st.number_input("□일 이동평균선이 (short)", key="ma_compare_short", value=preset_values.get("ma_compare_short", 25))
         offset_compare_long = st.number_input("□일 전", key="offset_compare_long", value=preset_values.get("offset_compare_long", 1))
-        ma_compare_long = st.number_input("□일 이동평균선이 커야 **매수**", key="ma_compare_long", value=preset_values.get("ma_compare_long", 25))
+        ma_compare_long = st.number_input("□일 이동평균선 (long)보다 커야 **매수**", key="ma_compare_long", value=preset_values.get("ma_compare_long", 25))
 
     with col_right:
         st.markdown("**📤 매도 조건**")
@@ -419,17 +434,19 @@ with st.expander("⚙️ 체결/비용 & 기타 설정"):
 if st.button("📌 오늘 시그널 체크"):
     df_today = get_data(signal_ticker, start_date, end_date)
     if not df_today.empty:
-        check_signal_today(df_today,
-            ma_buy=ma_buy,
-            offset_ma_buy=offset_ma_buy,
-            ma_sell=ma_sell,
-            offset_ma_sell=offset_ma_sell,
-            offset_cl_buy=offset_cl_buy,
-            offset_cl_sell=offset_cl_sell,
+        check_signal_today(
+            df_today,
+            ma_buy=ma_buy, offset_ma_buy=offset_ma_buy,
+            ma_sell=ma_sell, offset_ma_sell=offset_ma_sell,
+            offset_cl_buy=offset_cl_buy, offset_cl_sell=offset_cl_sell,
             ma_compare_short=ma_compare_short if ma_compare_short > 0 else None,
             ma_compare_long=ma_compare_long if ma_compare_long > 0 else None,
             offset_compare_short=offset_compare_short,
-            offset_compare_long=offset_compare_long
+            offset_compare_long=offset_compare_long,
+            buy_operator=buy_operator,
+            sell_operator=sell_operator,
+            use_trend_in_buy=use_trend_in_buy,
+            use_trend_in_sell=use_trend_in_sell
         )
 
 
@@ -1150,3 +1167,4 @@ if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     )
     st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
