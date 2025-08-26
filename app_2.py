@@ -1167,3 +1167,4 @@ if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
 
 
+
