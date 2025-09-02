@@ -590,6 +590,8 @@ def backtest_fast(
             if signal == "SELL":
                 buy_price = None
             pending_action, pending_due_idx = None, None
+            
+        executed_today = (signal in ("BUY", "SELL")) 
 
         # -------------------------------------------------
         # -------------------------------------------------
@@ -617,7 +619,6 @@ def backtest_fast(
         profit_pct  = ((close_today - buy_price) / buy_price * 100) if buy_price else 0.0
 
         # ===== 조건 계산 =====
-        signal = "HOLD"
 
         # 매수/매도 기본 시그널
         buy_base  = (cl_b > ma_b) if (buy_operator == ">") else (cl_b < ma_b)
@@ -1227,6 +1228,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     )
     st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
