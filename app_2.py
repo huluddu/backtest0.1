@@ -553,11 +553,13 @@ def backtest_fast(
             take_trigger = False
 
         return stop_trigger, take_trigger, fill_px
-
-    for i in range(idx0, n):
+        
         # === 예약 주문(신호 발생일로부터 N일 뒤 체결) 상태 ===
         pending_action = None      # "BUY" 또는 "SELL" 예약
         pending_due_idx = None     # 언제 체결할지 (인덱스)
+    
+    for i in range(idx0, n):
+
         just_bought = False
         exec_price = None  # 이번 턴 체결가(있으면 기록)
 
@@ -571,6 +573,7 @@ def backtest_fast(
             if action == "BUY" and position == 0.0:
                 fill = _fill_buy(px_base)
                 position = cash / fill; cash = 0.0
+                buy_price = fill         # 반드시 기록
                 return "BUY", fill, True  # (signal, exec_price, just_bought)
             elif action == "SELL" and position > 0.0:
                 fill = _fill_sell(px_base)
@@ -639,18 +642,14 @@ def backtest_fast(
             # 이 날에는 더 이상 예약/추가 체결 잡지 않음
             pending_action, pending_due_idx = None, None
 
-        
-
-        # ===== Intraday 손절/익절 체크 =====
-        stop_hit, take_hit, intraday_px = (False, False, None)
-        if position > 0.0 and (stop_loss_pct > 0 or take_profit_pct > 0):
-            stop_hit, take_hit, intraday_px = _check_intraday_exit(buy_price, open_today, high_today, low_today)
-
-        base_sell = (sell_condition or stop_hit or take_hit)
+        base_sell = sell_condition
         can_sell  = (position > 0.0) and base_sell and (hold_days >= min_hold_days)
-        if stop_hit or take_hit:
-            can_sell = True  # 손절/익절은 최소보유일 무시
-
+        def _schedule(action):
+            nonlocal pending_action, pending_due_idx
+            pending_action = action
+            pending_due_idx = i + int(execution_lag_days)
+            
+   
         # ===== 체결 =====
         # ===== 조건 계산 =====
         # (이전 코드의 buy_condition / sell_condition 계산은 그대로 사용)
@@ -1215,6 +1214,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     )
     st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
