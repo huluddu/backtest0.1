@@ -470,7 +470,9 @@ def backtest_fast(
     fee_bps=0, slip_bps=0,
     use_trend_in_buy=True,
     use_trend_in_sell=False,
-    buy_operator=">", sell_operator="<"
+    buy_operator=">", sell_operator="<",
+    execution_lag_days=1,              # ✅ 추가: 신호 발생 후 몇 거래일 뒤에 체결할지 (기본 1일)
+    execution_price_mode="next_open"   # ✅ 추가: "next_open" | "next_close"
 ):
     n = len(base)
     if n == 0:
@@ -553,8 +555,41 @@ def backtest_fast(
         return stop_trigger, take_trigger, fill_px
 
     for i in range(idx0, n):
+        # === 예약 주문(신호 발생일로부터 N일 뒤 체결) 상태 ===
+        pending_action = None      # "BUY" 또는 "SELL" 예약
+        pending_due_idx = None     # 언제 체결할지 (인덱스)
         just_bought = False
         exec_price = None  # 이번 턴 체결가(있으면 기록)
+
+        # -------------------------------------------------
+        # (A) 예약 주문 체결 처리: i가 도래하면 먼저 체결
+        # -------------------------------------------------
+        # 체결가 기준: 다음날 시가/종가 선택
+        def _exec_pending(action):
+            nonlocal cash, position, buy_price, hold_days
+            px_base = xO[i] if execution_price_mode == "next_open" else x_trd[i]
+            if action == "BUY" and position == 0.0:
+                fill = _fill_buy(px_base)
+                position = cash / fill; cash = 0.0
+                return "BUY", fill, True  # (signal, exec_price, just_bought)
+            elif action == "SELL" and position > 0.0:
+                fill = _fill_sell(px_base)
+                cash = position * fill; position = 0.0
+                return "SELL", fill, False
+            return "HOLD", None, False
+
+        just_bought = False
+        exec_price = None
+        signal = "HOLD"
+
+        if (pending_action is not None) and (pending_due_idx == i):
+            signal, exec_price, just_bought = _exec_pending(pending_action)
+            if signal == "SELL":
+                buy_price = None
+            pending_action, pending_due_idx = None, None
+
+        # -------------------------------------------------
+        # -------------------------------------------------
 
         # 값 가져오기
         try:
@@ -588,6 +623,24 @@ def backtest_fast(
         buy_condition  = (buy_base and trend_ok) if use_trend_in_buy  else buy_base
         sell_condition = (sell_base and (not trend_ok)) if use_trend_in_sell else sell_base
 
+
+        
+        # ===== Intraday 손절/익절 체크 (보유 시 즉시 체결; 예약보다 우선) =====
+        stop_hit, take_hit, intraday_px = (False, False, None)
+        if position > 0.0 and (stop_loss_pct > 0 or take_profit_pct > 0):
+            stop_hit, take_hit, intraday_px = _check_intraday_exit(buy_price, open_today, high_today, low_today)
+
+        if position > 0.0 and (stop_hit or take_hit):
+            # 최소보유일 무시 + 오늘 바로 체결
+            px = intraday_px if intraday_px is not None else close_today
+            fill = _fill_sell(px)
+            cash = position * fill; position = 0.0
+            signal = "SELL"; exec_price = fill; buy_price = None
+            # 이 날에는 더 이상 예약/추가 체결 잡지 않음
+            pending_action, pending_due_idx = None, None
+
+        
+
         # ===== Intraday 손절/익절 체크 =====
         stop_hit, take_hit, intraday_px = (False, False, None)
         if position > 0.0 and (stop_loss_pct > 0 or take_profit_pct > 0):
@@ -599,77 +652,53 @@ def backtest_fast(
             can_sell = True  # 손절/익절은 최소보유일 무시
 
         # ===== 체결 =====
+        # ===== 조건 계산 =====
+        # (이전 코드의 buy_condition / sell_condition 계산은 그대로 사용)
+        # ...
+        base_sell = (sell_condition)  # stop/take는 위에서 이미 처리했으므로 여기선 순수 규칙만
+        can_sell  = (position > 0.0) and base_sell and (hold_days >= min_hold_days)
+
+        # ===== 체결 대신 "예약"만 생성 =====
+        # sb: "1","2","3" 행동 규칙은 그대로 적용하여 '오늘 예약할 액션'을 결정
+        def _schedule(action):
+            nonlocal pending_action, pending_due_idx
+            # 이미 예약이 있다면 덮어쓸지 말지는 취향이지만, 보수적으로 최신 신호로 갱신
+            pending_action = action
+            pending_due_idx = i + int(execution_lag_days)
+
         if sb == "1":
             if buy_condition and sell_condition:
                 if position == 0.0:
-                    fill = _fill_buy(close_today)
-                    position = cash / fill; cash = 0.0
-                    signal = "BUY"; buy_price = fill; exec_price = fill
-                    hold_days = 0; just_bought = True
+                    _schedule("BUY")
                 else:
                     if can_sell:
-                        # 손절/익절 우선 체결가 사용
-                        px = intraday_px if (stop_hit or take_hit) and intraday_px is not None else close_today
-                        fill = _fill_sell(px)
-                        cash = position * fill; position = 0.0
-                        signal = "SELL"; buy_price = None; exec_price = fill
-                    else:
-                        signal = "HOLD"
-
+                        _schedule("SELL")
             elif position == 0.0 and buy_condition:
-                fill = _fill_buy(close_today)
-                position = cash / fill; cash = 0.0
-                signal = "BUY"; buy_price = fill; exec_price = fill
-                hold_days = 0; just_bought = True
-
+                _schedule("BUY")
             elif can_sell:
-                px = intraday_px if (stop_hit or take_hit) and intraday_px is not None else close_today
-                fill = _fill_sell(px)
-                cash = position * fill; position = 0.0
-                signal = "SELL"; buy_price = None; exec_price = fill
+                _schedule("SELL")
 
         elif sb == "2":
             if buy_condition and sell_condition:
                 if position == 0.0:
-                    fill = _fill_buy(close_today)
-                    position = cash / fill; cash = 0.0
-                    signal = "BUY"; buy_price = fill; exec_price = fill
-                    hold_days = 0; just_bought = True
-                else:
-                    signal = "HOLD"
+                    _schedule("BUY")
+                # 보유 중이면 HOLD (예약 안 걸음)
             elif position == 0.0 and buy_condition:
-                fill = _fill_buy(close_today)
-                position = cash / fill; cash = 0.0
-                signal = "BUY"; buy_price = fill; exec_price = fill
-                hold_days = 0; just_bought = True
+                _schedule("BUY")
             elif can_sell:
-                px = intraday_px if (stop_hit or take_hit) and intraday_px is not None else close_today
-                fill = _fill_sell(px)
-                cash = position * fill; position = 0.0
-                signal = "SELL"; buy_price = None; exec_price = fill
+                _schedule("SELL")
 
         else:  # '3'
             if buy_condition and sell_condition:
-                if position == 0.0:
-                    signal = "HOLD"
-                else:
-                    if can_sell:
-                        px = intraday_px if (stop_hit or take_hit) and intraday_px is not None else close_today
-                        fill = _fill_sell(px)
-                        cash = position * fill; position = 0.0
-                        signal = "SELL"; buy_price = None; exec_price = fill
-                    else:
-                        signal = "HOLD"
-            elif buy_condition and position == 0.0:
-                fill = _fill_buy(close_today)
-                position = cash / fill; cash = 0.0
-                signal = "BUY"; buy_price = fill; exec_price = fill
-                hold_days = 0; just_bought = True
+                if position > 0.0 and can_sell:
+                    _schedule("SELL")
+                # 포지션 없으면 HOLD
+            elif (position == 0.0) and buy_condition:
+                _schedule("BUY")
             elif can_sell:
-                px = intraday_px if (stop_hit or take_hit) and intraday_px is not None else close_today
-                fill = _fill_sell(px)
-                cash = position * fill; position = 0.0
-                signal = "SELL"; buy_price = None; exec_price = fill
+                _schedule("SELL")
+
+        
 
         # 보유일 카운터
         if position > 0.0:
@@ -680,6 +709,14 @@ def backtest_fast(
 
         total = cash + (position * close_today if position > 0.0 else 0.0)
         asset_curve.append(total)
+
+        # 예약 상태 텍스트
+        pending_text = None
+        if pending_action is not None:
+            # 데이터 범위 넘어가면 체결 못 하므로 표시만
+            due_date = base["Date"].iloc[pending_due_idx] if pending_due_idx is not None and pending_due_idx < n else None
+            pending_text = f"{pending_action} 예약 (체결일: {due_date.strftime('%Y-%m-%d') if due_date is not None else '범위밖'})"
+
 
         logs.append({
             "날짜": pd.to_datetime(base["Date"].iloc[i]).strftime("%Y-%m-%d"),
@@ -696,6 +733,7 @@ def backtest_fast(
             "매도가격비교": round(cl_s - ma_s, 6),
             "매수이유": (f"종가({cl_b:.2f}) {'>' if buy_operator=='>' else '<'} MA_BUY({ma_b:.2f})" + (" + 추세필터 통과" if trend_ok else " + 추세필터 불통과")) if buy_condition else "",
             "매도이유": (f"종가({cl_s:.2f}) {'<' if sell_operator=='<' else '>'} MA_SELL({ma_s:.2f})") if sell_condition else "",
+            "예약상태": pending_text,       # ✅ 추가: 예약 상황 가시화
             "양시그널": buy_condition and sell_condition,
             "보유일": hold_days
         })
@@ -825,8 +863,11 @@ def run_random_simulations_fast(
             fee_bps=fee_bps, slip_bps=slip_bps,
             use_trend_in_buy=use_trend_in_buy,
             use_trend_in_sell=use_trend_in_sell,
-            buy_operator=buy_operator, sell_operator=sell_operator
+            buy_operator=buy_operator, sell_operator=sell_operator,
+            execution_lag_days=1,
+            execution_price_mode="next_open"
         )
+        
         if not r:
             continue
 
@@ -874,8 +915,11 @@ if st.button("✅ 백테스트 실행"):
         use_trend_in_buy=use_trend_in_buy,
         use_trend_in_sell=use_trend_in_sell,
         buy_operator=buy_operator,
-        sell_operator=sell_operator
+        sell_operator=sell_operator,
+        execution_lag_days=1,                # ✅ 다음 거래일 체결
+        execution_price_mode="next_open"     # ✅ 다음날 시가로 체결 (원하면 "next_close")
     )
+
 
     if result:
         st.subheader("📊 백테스트 결과 요약")
@@ -1171,6 +1215,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     )
     st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
