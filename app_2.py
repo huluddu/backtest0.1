@@ -762,18 +762,23 @@ def backtest_fast(
     trade_returns = []
     gross_profit = 0.0
     gross_loss = 0.0
-
+    
     for b, s in trade_pairs:
-        pb = b["체결가"] if b["체결가"] else b["종가"]
-        ps = s["체결가"] if s["체결가"] else s["종가"]
-        r = (ps - pb) / pb
-        trade_returns.append(r)
-        if r >= 0:
-            wins += 1
-            gross_profit += r
-        else:
-            gross_loss += (-r)
-
+        # 안전하게 체결가 우선
+        pb = b.get("체결가")
+        ps = s.get("체결가")
+        if pb is None:
+            pb = b.get("종가")
+            if ps is None:
+                ps = s.get("종가")
+                r = (ps - pb) / pb if pb else 0.0
+                trade_returns.append(r)
+                if r >= 0:
+                    wins += 1
+                    gross_profit += r
+                else:
+                    gross_loss += (-r)
+    
     total_trades = len(trade_pairs)
     win_rate = round((wins / total_trades) * 100, 2) if total_trades else 0.0
     avg_trade_return_pct = round((np.mean(trade_returns) * 100), 2) if trade_returns else 0.0
@@ -1214,6 +1219,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     )
     st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
