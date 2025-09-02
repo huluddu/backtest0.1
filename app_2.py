@@ -919,6 +919,11 @@ if st.button("✅ 백테스트 실행"):
         st.subheader("📊 백테스트 결과 요약")
         summary = {k: v for k, v in result.items() if k != "매매 로그"}
         st.json(summary)
+        colA, colB, colC, colD = st.columns(4)
+        colA.metric("총 수익률", f"{summary.get('수익률 (%)', 0)}%")
+        colB.metric("승률", f"{summary.get('승률 (%)', 0)}%")      # 👈 승률 강조
+        colC.metric("총 매매 횟수", summary.get("총 매매 횟수", 0))
+        colD.metric("MDD", f"{summary.get('MDD (%)', 0)}%")
 
         df_log = pd.DataFrame(result["매매 로그"])
         df_log["날짜"] = pd.to_datetime(df_log["날짜"])
@@ -1209,6 +1214,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     )
     st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
