@@ -472,7 +472,7 @@ def backtest_fast(
     use_trend_in_sell=False,
     buy_operator=">", sell_operator="<",
     execution_lag_days=1,              # ✅ 추가: 신호 발생 후 몇 거래일 뒤에 체결할지 (기본 1일)
-    execution_price_mode="next_open"   # ✅ 추가: "next_open" | "next_close"
+    execution_price_mode="next_close"   # ✅ 추가: "next_open" | "next_close"
 ):
     n = len(base)
     if n == 0:
@@ -873,7 +873,7 @@ def run_random_simulations_fast(
             use_trend_in_sell=use_trend_in_sell,
             buy_operator=buy_operator, sell_operator=sell_operator,
             execution_lag_days=1,
-            execution_price_mode="next_open"
+            execution_price_mode="next_close"
         )
         
         if not r:
@@ -925,7 +925,7 @@ if st.button("✅ 백테스트 실행"):
         buy_operator=buy_operator,
         sell_operator=sell_operator,
         execution_lag_days=1,                # ✅ 다음 거래일 체결
-        execution_price_mode="next_open"     # ✅ 다음날 시가로 체결 (원하면 "next_close")
+        execution_price_mode="next_close"     # ✅ 다음날 시가로 체결 (원하면 "next_close")
     )
 
 
@@ -1228,6 +1228,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     )
     st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
