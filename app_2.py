@@ -501,6 +501,9 @@ def backtest_fast(
     asset_curve, logs = [], []
     sb = strategy_behavior[:1]
     hold_days = 0
+    # === 예약 주문(신호 발생일로부터 N일 뒤 체결) 상태 ===
+    pending_action = None      # "BUY" 또는 "SELL" 예약
+    pending_due_idx = None     # 언제 체결할지 (인덱스)
 
     def _fill_buy(px: float) -> float:
         return px * (1 + (slip_bps + fee_bps) / 10000.0)
@@ -553,10 +556,7 @@ def backtest_fast(
             take_trigger = False
 
         return stop_trigger, take_trigger, fill_px
-        
-        # === 예약 주문(신호 발생일로부터 N일 뒤 체결) 상태 ===
-        pending_action = None      # "BUY" 또는 "SELL" 예약
-        pending_due_idx = None     # 언제 체결할지 (인덱스)
+     
     
     for i in range(idx0, n):
 
@@ -659,11 +659,6 @@ def backtest_fast(
 
         # ===== 체결 대신 "예약"만 생성 =====
         # sb: "1","2","3" 행동 규칙은 그대로 적용하여 '오늘 예약할 액션'을 결정
-        def _schedule(action):
-            nonlocal pending_action, pending_due_idx
-            # 이미 예약이 있다면 덮어쓸지 말지는 취향이지만, 보수적으로 최신 신호로 갱신
-            pending_action = action
-            pending_due_idx = i + int(execution_lag_days)
 
         if sb == "1":
             if buy_condition and sell_condition:
@@ -1214,6 +1209,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     )
     st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
