@@ -266,13 +266,12 @@ def check_signal_today(
 PRESETS = {
     "SOXL 전략1": {
         "signal_ticker": "SOXL", "trade_ticker": "SOXL",
-        "ma_buy": 15, "offset_ma_buy": 15, "offset_cl_buy": 5,
-        "ma_sell": 25, "offset_ma_sell": 1, "offset_cl_sell": 5,
-        "ma_compare_short": 5, "ma_compare_long": 5,
-        "offset_compare_short": 25, "offset_compare_long": 1,
-        "buy_operator": "<", "sell_operator": "<",
+        "offset_cl_buy": 25, "buy_operator": ">", "offset_ma_buy": 15, "ma_buy": 20,
+        "offset_cl_sell": 25, "sell_operator": "<", "offset_ma_sell": 5, "ma_sell": 25,
         "use_trend_in_buy": True, "use_trend_in_sell": True,
-        "stop_loss_pct": 0.0, "take_profit_pct": 30.0
+        "offset_compare_short": 25, "ma_compare_short": 25,
+        "offset_compare_long": 1, "ma_compare_long": 25,         
+        "stop_loss_pct": 30.0, "take_profit_pct": 0.0
     },
 
     "SOXL 전략2": {
@@ -1228,6 +1227,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     )
     st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
