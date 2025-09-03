@@ -284,6 +284,17 @@ PRESETS = {
         "stop_loss_pct": 30.0, "take_profit_pct": 10.0
     },
 
+    "SOXL 전략3": {
+        "signal_ticker": "SOXL", "trade_ticker": "SOXL",
+        "offset_cl_buy": 25, "buy_operator": ">", "offset_ma_buy": 25, "ma_buy": 25,
+        "offset_cl_sell": 25, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 25,
+        "use_trend_in_buy": True, "use_trend_in_sell": True,
+        "offset_compare_short": 25, "ma_compare_short": 25,
+        "offset_compare_long": 1, "ma_compare_long": 25,         
+        "stop_loss_pct": 0.0, "take_profit_pct": 10.0
+    },
+    
+
     "390390 전략": {
         "signal_ticker": "390390", "trade_ticker": "390390",
         "offset_cl_buy": 15, "buy_operator": ">", "offset_ma_buy": 1, "ma_buy": 20,
@@ -292,26 +303,6 @@ PRESETS = {
         "offset_compare_short": 25, "ma_compare_short": 15,
         "offset_compare_long": 1, "ma_compare_long": 15,         
         "stop_loss_pct": 0.0, "take_profit_pct": 0.0
-    },
-
-    "SOXS 전략": {
-        "signal_ticker": "SOXS", "trade_ticker": "SOXS",
-        "offset_cl_buy": 5, "buy_operator": ">", "offset_ma_buy": 15, "ma_buy": 10,
-        "offset_cl_sell": 1, "sell_operator": "<", "offset_ma_sell": 5, "ma_sell": 5, 
-        "use_trend_in_buy": True, "use_trend_in_sell": False,
-        "offset_compare_short": 15, "ma_compare_short": 5,
-        "offset_compare_long": 1, "ma_compare_long": 5,         
-        "stop_loss_pct": 30.0, "take_profit_pct": 50.0
-    },
-
-    "SOXS 전략2": {
-        "signal_ticker": "SOXS", "trade_ticker": "SOXS",
-        "offset_cl_buy": 25, "buy_operator": "<", "offset_ma_buy": 1, "ma_buy": 5,
-        "offset_cl_sell": 15, "sell_operator": ">", "offset_ma_sell": 25, "ma_sell": 5, 
-        "use_trend_in_buy": True, "use_trend_in_sell": True,
-        "offset_compare_short": 25, "ma_compare_short": 20,
-        "offset_compare_long": 1, "ma_compare_long": 20,         
-        "stop_loss_pct": 0.0, "take_profit_pct": 50.0
     },
     
     "TSLL 전략": {
@@ -1227,6 +1218,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     )
     st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
