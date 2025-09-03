@@ -335,6 +335,17 @@ PRESETS = {
         "stop_loss_pct": 0.0, "take_profit_pct": 0.0
     },
 
+    "144600 전략": {
+        "signal_ticker": "144600", "trade_ticker": "144600",
+        "offset_cl_buy": 1, "buy_operator": ">", "offset_ma_buy": 25, "ma_buy": 15,
+        "offset_cl_sell": 25, "sell_operator": "<", "offset_ma_sell": 1, "ma_sell": 20, 
+        "use_trend_in_buy": True, "use_trend_in_sell": True,
+        "offset_compare_short": 15, "ma_compare_short": 15,
+        "offset_compare_long": 1, "ma_compare_long": 15,         
+        "stop_loss_pct": 0.0, "take_profit_pct": 10.0
+    },
+
+
     
 
 }
@@ -344,7 +355,7 @@ st.set_page_config(page_title="전략 백테스트", layout="wide")
 st.title("📊 전략 백테스트 웹앱")
 
 st.markdown("모든 매매는 종가 매매이나, 손절,익절은 장중 시가. n일전 데이터 기반으로 금일 종가 매매를 한다.")
-st.markdown("KODEX미국반도체 390390, KDOEX인버스 114800, KODEX미국나스닥100 379810, ACEKRX금현물 411060, ACE미국30년국채액티브(H) 453850, ACE미국빅테크TOP7Plus 465580")
+st.markdown("KODEX미국반도체 390390, KODEX200 069500 KDOEX인버스 114800, KODEX미국나스닥100 379810, ACEKRX금현물 411060, KODEX은선물 114800, ACE미국30년국채액티브(H) 453850, ACE미국빅테크TOP7Plus 465580")
 
     # 📌 프리셋 선택 UI
 selected_preset = st.selectbox("🎯 전략 프리셋 선택", ["직접 설정"] + list(PRESETS.keys()))
@@ -1220,6 +1231,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     )
     st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
