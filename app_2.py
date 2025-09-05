@@ -315,6 +315,17 @@ PRESETS = {
         "stop_loss_pct": 0.0, "take_profit_pct": 9.0
     },
 
+    "SLV 전략": {
+        "signal_ticker": "SLV", "trade_ticker": "SLV",
+        "offset_cl_buy": 5, "buy_operator": ">", "offset_ma_buy": 5, "ma_buy": 5,
+        "offset_cl_sell": 5, "sell_operator": "<", "offset_ma_sell": 1, "ma_sell": 15, 
+        "use_trend_in_buy": True, "use_trend_in_sell": True,
+        "offset_compare_short": 15, "ma_compare_short": 10,
+        "offset_compare_long": 1, "ma_compare_long": 15,         
+        "stop_loss_pct": 0.0, "take_profit_pct": 30.0
+    },
+ 
+
     "465580 전략": {
         "signal_ticker": "465580", "trade_ticker": "465580",
         "offset_cl_buy": 5, "buy_operator": "<", "offset_ma_buy": 1, "ma_buy": 10,
@@ -1231,6 +1242,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     )
     st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
