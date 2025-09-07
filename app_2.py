@@ -1461,6 +1461,27 @@ choices_dict = {
     "take_profit_pct":      _parse_list(txt_take_profit, "float"),
 }
 
+
+
+if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
+    ma_pool = [5, 10, 15, 25, 50]
+    base, x_sig, x_trd, ma_dict_sig = prepare_base(
+        signal_ticker, trade_ticker, start_date, end_date, ma_pool
+    )
+    if seed:
+        random.seed(int(seed))
+    df_sim = run_random_simulations_fast(
+        int(n_simulations), base, x_sig, x_trd, ma_dict_sig,
+        initial_cash=initial_cash_ui, fee_bps=fee_bps, slip_bps=slip_bps,
+        choices_dict=choices_dict
+    )
+    st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
+    st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
+
+
+
+
 # --- 🔎 자동 최적 전략 탐색 (Train/Test) ---
 with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False):
     st.markdown("""
@@ -1472,7 +1493,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
     colA, colB = st.columns(2)
     with colA:
         split_ratio = st.slider("Train 비중 (나머지 Test)", min_value=0.5, max_value=0.9, value=0.7, step=0.05)
-        objective_metric = st.selectbox("목표 지표", ["수익률 (%)", "샤프", "Profit Factor", "MDD (%)"], index=0)
+        objective_metric = st.selectbox("목표 지표", ["수익률 (%)", "승률", "샤프", "Profit Factor", "MDD (%)"], index=0)
         objective_mode = "min" if objective_metric == "MDD (%)" else "max"
         n_trials = st.number_input("탐색 시도 횟수 (랜덤)", value=200, min_value=20, step=20)
         topn_show = st.number_input("상위 N개만 표시", value=30, min_value=5, step=5)
@@ -1534,24 +1555,6 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
-
-
-
-if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
-    ma_pool = [5, 10, 15, 25, 50]
-    base, x_sig, x_trd, ma_dict_sig = prepare_base(
-        signal_ticker, trade_ticker, start_date, end_date, ma_pool
-    )
-    if seed:
-        random.seed(int(seed))
-    df_sim = run_random_simulations_fast(
-        int(n_simulations), base, x_sig, x_trd, ma_dict_sig,
-        initial_cash=initial_cash_ui, fee_bps=fee_bps, slip_bps=slip_bps,
-        choices_dict=choices_dict
-    )
-    st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
-    st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
-
 
 
 
