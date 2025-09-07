@@ -302,6 +302,17 @@ with st.expander("🪓 부분 청산 & 트레일링 스탑(선택)", expanded=Fa
     use_trailing = st.checkbox("트레일링 스탑 사용", value=False)
     trail_pct = st.number_input("트레일링 폭(%)", value=8.0, step=0.5)
 
+# ---- Safety defaults to avoid NameError on reruns ----
+try:
+    use_trend_in_buy
+except NameError:
+    use_trend_in_buy = True
+try:
+    use_trend_in_sell
+except NameError:
+    use_trend_in_sell = False
+
+
 # ------------------------ 오늘의 시그널 ------------------------
 def check_signal_today(df,
                        ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
