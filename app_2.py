@@ -826,7 +826,241 @@ def backtest_fast(
         "최종 자산": round(final_asset)
     }
 
+# ===== Auto Optimizer (Train/Test) =====
+def _score_from_summary(summary: dict, metric: str, mode: str = "max"):
+    """
+    summary: backtest_fast() 결과 요약 dict (매매 로그 제외)
+    metric: "수익률 (%)", "샤프", "Profit Factor", "MDD (%)" 등
+    mode: "max" 또는 "min"
+    """
+    val = summary.get(metric, None)
+    if val is None:
+        return None
+    # MDD(%)는 작을수록 좋으니 보통 min, 나머지는 max 권장
+    return val if mode == "max" else (-val)
+
+def _prepare_base_for_range(signal_ticker, trade_ticker, start_date, end_date, ma_pool):
+    """기간을 나눠 재계산 (lookahead 방지)."""
+    return prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool)
+
+def _try_backtest_once(params, base_pack, fees_pack, exec_pack):
+    """주어진 파라미터로 1회 백테스트."""
+    base, x_sig, x_trd, ma_dict_sig = base_pack
+    fee_bps, slip_bps = fees_pack
+    execution_lag_days, execution_price_mode = exec_pack
+
+    # 필요한 MA 즉석 보충
+    need_windows = [params["ma_buy"], params["ma_sell"]]
+    if params.get("ma_compare_short"): need_windows.append(params["ma_compare_short"])
+    if params.get("ma_compare_long"):  need_windows.append(params["ma_compare_long"])
+    for w in need_windows:
+        if w and w not in ma_dict_sig:
+            ma_dict_sig[w] = _fast_ma(x_sig, w)
+
+    r = backtest_fast(
+        base, x_sig, x_trd, ma_dict_sig,
+        params["ma_buy"], params["offset_ma_buy"],
+        params["ma_sell"], params["offset_ma_sell"],
+        params["offset_cl_buy"], params["offset_cl_sell"],
+        params.get("ma_compare_short"), params.get("ma_compare_long"),
+        params["offset_compare_short"], params["offset_compare_long"],
+        initial_cash=params["initial_cash"],
+        stop_loss_pct=params["stop_loss_pct"], take_profit_pct=params["take_profit_pct"],
+        strategy_behavior=params["strategy_behavior"],
+        min_hold_days=params["min_hold_days"],
+        fee_bps=fee_bps, slip_bps=slip_bps,
+        use_trend_in_buy=params["use_trend_in_buy"],
+        use_trend_in_sell=params["use_trend_in_sell"],
+        buy_operator=params["buy_operator"], sell_operator=params["sell_operator"],
+        execution_lag_days=execution_lag_days,
+        execution_price_mode=execution_price_mode
+    )
+    return r
+
+def _sample_params(choices_dict, defaults):
+    """choices_dict에서 랜덤 샘플 1개 뽑아 파라미터 dict 구성."""
+    def pick(key, fallback):
+        arr = choices_dict.get(key, [])
+        return random.choice(arr) if arr else fallback
+
+    ma_compare_short = pick("ma_compare_short", defaults["ma_compare_short"])
+    mcl_raw          = pick("ma_compare_long", defaults["ma_compare_long"])
+    if mcl_raw == "same":
+        ma_compare_long = ma_compare_short
+    else:
+        ma_compare_long = mcl_raw
+
+    return {
+        "ma_buy":             pick("ma_buy", defaults["ma_buy"]),
+        "offset_ma_buy":      pick("offset_ma_buy", defaults["offset_ma_buy"]),
+        "offset_cl_buy":      pick("offset_cl_buy", defaults["offset_cl_buy"]),
+        "buy_operator":       pick("buy_operator", defaults["buy_operator"]),
+
+        "ma_sell":            pick("ma_sell", defaults["ma_sell"]),
+        "offset_ma_sell":     pick("offset_ma_sell", defaults["offset_ma_sell"]),
+        "offset_cl_sell":     pick("offset_cl_sell", defaults["offset_cl_sell"]),
+        "sell_operator":      pick("sell_operator", defaults["sell_operator"]),
+
+        "use_trend_in_buy":   pick("use_trend_in_buy", defaults["use_trend_in_buy"]),
+        "use_trend_in_sell":  pick("use_trend_in_sell", defaults["use_trend_in_sell"]),
+        "ma_compare_short":   ma_compare_short,
+        "ma_compare_long":    ma_compare_long,
+        "offset_compare_short": pick("offset_compare_short", defaults["offset_compare_short"]),
+        "offset_compare_long":  pick("offset_compare_long", defaults["offset_compare_long"]),
+
+        "stop_loss_pct":      pick("stop_loss_pct", defaults["stop_loss_pct"]),
+        "take_profit_pct":    pick("take_profit_pct", defaults["take_profit_pct"]),
+
+        "initial_cash":       defaults["initial_cash"],
+        "strategy_behavior":  defaults["strategy_behavior"],
+        "min_hold_days":      defaults["min_hold_days"],
+    }
+
+def auto_search_train_test(
+    signal_ticker, trade_ticker,
+    start_date, end_date,
+    split_ratio,                    # 예: 0.7 → 앞 70% train, 뒤 30% test
+    choices_dict,
+    n_trials=200,
+    objective_metric="수익률 (%)",
+    objective_mode="max",           # "max" 또는 "min"
+    initial_cash=5_000_000,
+    fee_bps=0, slip_bps=0,
+    strategy_behavior="1. 포지션 없으면 매수 / 보유 중이면 매도",
+    min_hold_days=0,
+    execution_lag_days=1,
+    execution_price_mode="next_close",
+    constraints=None,               # {"min_trades": 5, "min_winrate": 0.0, "max_mdd": None}
+):
+    """랜덤 탐색 기반 자동 최적화 + Train/Test 일반화 성능 확인."""
+    constraints = constraints or {}
+    min_trades  = constraints.get("min_trades", 0)
+    min_winrate = constraints.get("min_winrate", 0.0)
+    max_mdd     = constraints.get("max_mdd", None)
+
+    # 기본값
+    defaults = dict(
+        ma_buy=25, offset_ma_buy=1, offset_cl_buy=25, buy_operator=">",
+        ma_sell=25, offset_ma_sell=1, offset_cl_sell=1, sell_operator="<",
+        use_trend_in_buy=True, use_trend_in_sell=False,
+        ma_compare_short=0, ma_compare_long=0, offset_compare_short=1, offset_compare_long=1,
+        stop_loss_pct=0.0, take_profit_pct=0.0,
+        initial_cash=initial_cash, strategy_behavior=strategy_behavior, min_hold_days=min_hold_days
+    )
+
+    # 후보 MA 윈도우 풀(최소화): 속도 위해 집합으로 모아 계산
+    ma_pool = set()
+    for key in ("ma_buy", "ma_sell", "ma_compare_short", "ma_compare_long"):
+        for v in choices_dict.get(key, []):
+            if v == "same":  # "same"은 실제 숫자 아님
+                continue
+            if isinstance(v, int) and v > 0:
+                ma_pool.add(v)
+    if not ma_pool:
+        ma_pool = {5, 10, 15, 25}
+
+    # 전체 base (split용 날짜 시퀀스 얻기)
+    base_full, x_sig_full, x_trd_full, _ = prepare_base(signal_ticker, trade_ticker, start_date, end_date, list(ma_pool))
+    n_all = len(base_full)
+    if n_all < 50:
+        return pd.DataFrame()
+
+    split_idx = int(n_all * split_ratio)
+    # 날짜 기준으로 split
+    date_train_end = pd.to_datetime(base_full["Date"].iloc[split_idx - 1]).date()
+
+    # Train
+    base_tr, x_sig_tr, x_trd_tr, ma_tr = prepare_base(signal_ticker, trade_ticker, start_date, date_train_end, list(ma_pool))
+    # Test
+    base_te, x_sig_te, x_trd_te, ma_te = prepare_base(signal_ticker, trade_ticker, date_train_end, end_date, list(ma_pool))
+
+    base_pack_tr = (base_tr, x_sig_tr, x_trd_tr, ma_tr)
+    base_pack_te = (base_te, x_sig_te, x_trd_te, ma_te)
+    fees_pack    = (fee_bps, slip_bps)
+    exec_pack    = (execution_lag_days, execution_price_mode)
+
+    results = []
+    seen = set()
+
+    for _ in range(int(n_trials)):
+        params = _sample_params(choices_dict, defaults)
+
+        # 중복 파라미터 skip (간단 직렬화)
+        sig_key = tuple(sorted((k, str(v)) for k, v in params.items()))
+        if sig_key in seen:
+            continue
+        seen.add(sig_key)
+
+        # Train 실행
+        r_tr = _try_backtest_once(params, base_pack_tr, fees_pack, exec_pack)
+        if not r_tr:
+            continue
+
+        # 제약조건 필터
+        trades  = r_tr.get("총 매매 횟수", 0)
+        wr      = r_tr.get("승률 (%)", 0.0)
+        mdd_val = r_tr.get("MDD (%)", 0.0)
+        if trades < min_trades: 
+            continue
+        if wr < min_winrate:
+            continue
+        if (max_mdd is not None) and (mdd_val > max_mdd):
+            continue
+
+        score = _score_from_summary(r_tr, objective_metric, objective_mode)
+        if score is None:
+            continue
+
+        # Test 실행 (일반화 성능)
+        r_te = _try_backtest_once(params, base_pack_te, fees_pack, exec_pack)
+        if not r_te:
+            continue
+
+        row = {
+            # === Train 성과 ===
+            "Train_"+objective_metric: r_tr.get(objective_metric, None),
+            "Train_수익률(%)": r_tr.get("수익률 (%)", None),
+            "Train_승률(%)": r_tr.get("승률 (%)", None),
+            "Train_MDD(%)": r_tr.get("MDD (%)", None),
+            "Train_ProfitFactor": r_tr.get("Profit Factor", None),
+            "Train_총매매": r_tr.get("총 매매 횟수", None),
+
+            # === Test 성과 ===
+            "Test_"+objective_metric: r_te.get(objective_metric, None),
+            "Test_수익률(%)": r_te.get("수익률 (%)", None),
+            "Test_승률(%)": r_te.get("승률 (%)", None),
+            "Test_MDD(%)": r_te.get("MDD (%)", None),
+            "Test_ProfitFactor": r_te.get("Profit Factor", None),
+            "Test_총매매": r_te.get("총 매매 횟수", None),
+        }
+
+        # 파라미터 기록
+        row.update({
+            "ma_buy": params["ma_buy"], "offset_ma_buy": params["offset_ma_buy"], "offset_cl_buy": params["offset_cl_buy"], "buy_operator": params["buy_operator"],
+            "ma_sell": params["ma_sell"], "offset_ma_sell": params["offset_ma_sell"], "offset_cl_sell": params["offset_cl_sell"], "sell_operator": params["sell_operator"],
+            "use_trend_in_buy": params["use_trend_in_buy"], "use_trend_in_sell": params["use_trend_in_sell"],
+            "ma_compare_short": params["ma_compare_short"], "ma_compare_long": params["ma_compare_long"],
+            "offset_compare_short": params["offset_compare_short"], "offset_compare_long": params["offset_compare_long"],
+            "stop_loss_pct": params["stop_loss_pct"], "take_profit_pct": params["take_profit_pct"],
+            "min_hold_days": params["min_hold_days"]
+        })
+        results.append(row)
+
+    df = pd.DataFrame(results)
+    if df.empty:
+        return df
+
+    # 정렬 기준: objective_metric의 Test 성과 기준(동률 시 Train 보조)
+    test_col  = "Test_"+objective_metric
+    train_col = "Train_"+objective_metric
+    ascending = (objective_mode == "min")
+    df = df.sort_values(by=[test_col, train_col], ascending=[ascending, ascending], na_position="last").reset_index(drop=True)
+    return df
+
+
+
 # ===== Fast Random Sims =====
+
 def run_random_simulations_fast(
     n_simulations, base, x_sig, x_trd, ma_dict_sig,
     initial_cash=5_000_000, fee_bps=0, slip_bps=0,
@@ -1227,6 +1461,81 @@ choices_dict = {
     "take_profit_pct":      _parse_list(txt_take_profit, "float"),
 }
 
+# --- 🔎 자동 최적 전략 탐색 (Train/Test) ---
+with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False):
+    st.markdown("""
+- 아래 후보군(위 랜덤 시뮬 입력과 동일 포맷)을 토대로 **랜덤 탐색**을 수행해요.  
+- 기간을 **Train/Test로 분할**해서 **일반화 성능**을 같이 보여줍니다.  
+- 제약조건(최소 매매 횟수, 최소 승률, 최대 MDD)을 걸어 후보를 거르며,  
+  정렬은 선택한 **목표 지표의 Test 성과**를 기준으로 합니다.
+""")
+    colA, colB = st.columns(2)
+    with colA:
+        split_ratio = st.slider("Train 비중 (나머지 Test)", min_value=0.5, max_value=0.9, value=0.7, step=0.05)
+        objective_metric = st.selectbox("목표 지표", ["수익률 (%)", "샤프", "Profit Factor", "MDD (%)"], index=0)
+        objective_mode = "min" if objective_metric == "MDD (%)" else "max"
+        n_trials = st.number_input("탐색 시도 횟수 (랜덤)", value=200, min_value=20, step=20)
+        topn_show = st.number_input("상위 N개만 표시", value=30, min_value=5, step=5)
+    with colB:
+        min_trades = st.number_input("제약: 최소 매매 횟수", value=5, min_value=0, step=1)
+        min_winrate = st.number_input("제약: 최소 승률(%)", value=0.0, step=1.0)
+        max_mdd = st.number_input("제약: 최대 MDD(%) (0=미적용)", value=0.0, step=1.0)
+        max_mdd = None if max_mdd == 0.0 else float(max_mdd)
+
+    if st.button("🚀 자동 탐색 실행 (Train/Test)"):
+        # MA 풀: 후보군에서 자동 추출(속도최적화)
+        ma_pool = set([5, 10, 15, 25])  # 기본 가드
+        for key in ("ma_buy","ma_sell","ma_compare_short","ma_compare_long"):
+            for v in choices_dict.get(key, []):
+                if v == "same": 
+                    continue
+                if isinstance(v, int) and v > 0:
+                    ma_pool.add(v)
+
+        # 먼저 전체 날짜를 사용해 base를 구해 split 경계 잡을 것이므로,
+        # auto_search 내부에서 다시 train/test 별로 prepare_base를 호출합니다.
+        if seed:
+            random.seed(int(seed))
+
+        df_auto = auto_search_train_test(
+            signal_ticker=signal_ticker, trade_ticker=trade_ticker,
+            start_date=start_date, end_date=end_date,
+            split_ratio=float(split_ratio),
+            choices_dict=choices_dict,
+            n_trials=int(n_trials),
+            objective_metric=objective_metric,
+            objective_mode=objective_mode,
+            initial_cash=initial_cash_ui,
+            fee_bps=fee_bps, slip_bps=slip_bps,
+            strategy_behavior=strategy_behavior,
+            min_hold_days=min_hold_days,
+            execution_lag_days=1,
+            execution_price_mode="next_close",
+            constraints={"min_trades": int(min_trades), "min_winrate": float(min_winrate), "max_mdd": max_mdd}
+        )
+
+        if df_auto.empty:
+            st.warning("조건을 만족하는 결과가 없거나 데이터가 부족합니다. 후보군/제약/기간을 조정해 보세요.")
+        else:
+            st.subheader(f"🏆 자동 탐색 결과 (상위 {topn_show}개, Test {objective_metric} 기준 정렬)")
+            st.dataframe(df_auto.head(int(topn_show)))
+            csv_auto = df_auto.to_csv(index=False).encode("utf-8-sig")
+            st.download_button("⬇️ 자동 탐색 결과 다운로드 (CSV)", data=csv_auto, file_name="auto_search_train_test.csv", mime="text/csv")
+
+            # ✨ 베스트 1개를 바로 적용해 백테스트 다시 그려보고 싶다면:
+            with st.expander("🔥 베스트 파라미터 1개 즉시 적용(선택)"):
+                if len(df_auto) > 0:
+                    best = df_auto.iloc[0].to_dict()
+                    st.write({k: best[k] for k in [
+                        "ma_buy","offset_ma_buy","offset_cl_buy","buy_operator",
+                        "ma_sell","offset_ma_sell","offset_cl_sell","sell_operator",
+                        "use_trend_in_buy","use_trend_in_sell",
+                        "ma_compare_short","ma_compare_long",
+                        "offset_compare_short","offset_compare_long",
+                        "stop_loss_pct","take_profit_pct","min_hold_days"
+                    ]})
+
+
 
 if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     ma_pool = [5, 10, 15, 25, 50]
@@ -1242,6 +1551,7 @@ if st.button("🧪 랜덤 전략 시뮬레이션 실행"):
     )
     st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
     st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
+
 
 
 
