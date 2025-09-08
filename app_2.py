@@ -1433,8 +1433,8 @@ with st.expander("🎲 랜덤 시뮬 변수 후보 입력", expanded=False):
 
         txt_use_trend_buy     = st.text_input("use_trend_in_buy 후보(True/False)",  "True,False")
         txt_use_trend_sell    = st.text_input("use_trend_in_sell 후보(True/False)", "True,False")
-        txt_stop_loss         = st.text_input("stop_loss_pct 후보(%)",  "0,30")
-        txt_take_profit       = st.text_input("take_profit_pct 후보(%)","0,30,50")
+        txt_stop_loss         = st.text_input("stop_loss_pct 후보(%)",  "0,10")
+        txt_take_profit       = st.text_input("take_profit_pct 후보(%)","0,10,30")
 
     n_simulations = st.number_input("시뮬레이션 횟수", value=100, min_value=1, step=10)
 
@@ -1496,16 +1496,16 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
         objective_metric = st.selectbox("목표 지표", ["수익률 (%)", "승률", "샤프", "Profit Factor", "MDD (%)"], index=0)
         objective_mode = "min" if objective_metric == "MDD (%)" else "max"
         n_trials = st.number_input("탐색 시도 횟수 (랜덤)", value=200, min_value=20, step=20)
-        topn_show = st.number_input("상위 N개만 표시", value=30, min_value=5, step=5)
+        topn_show = st.number_input("상위 N개만 표시", value=10, min_value=5, step=5)
     with colB:
         min_trades = st.number_input("제약: 최소 매매 횟수", value=5, min_value=0, step=1)
-        min_winrate = st.number_input("제약: 최소 승률(%)", value=0.0, step=1.0)
+        min_winrate = st.number_input("제약: 최소 승률(%)", value=55.0, step=1.0)
         max_mdd = st.number_input("제약: 최대 MDD(%) (0=미적용)", value=0.0, step=1.0)
         max_mdd = None if max_mdd == 0.0 else float(max_mdd)
 
     if st.button("🚀 자동 탐색 실행 (Train/Test)"):
         # MA 풀: 후보군에서 자동 추출(속도최적화)
-        ma_pool = set([5, 10, 15, 25])  # 기본 가드
+        ma_pool = set([1, 5, 10, 15, 25])  # 기본 가드
         for key in ("ma_buy","ma_sell","ma_compare_short","ma_compare_long"):
             for v in choices_dict.get(key, []):
                 if v == "same": 
@@ -1555,6 +1555,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
