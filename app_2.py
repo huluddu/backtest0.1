@@ -1492,7 +1492,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
 """)
     colA, colB = st.columns(2)
     with colA:
-        split_ratio = st.slider("Train 비중 (나머지 Test)", min_value=0.5, max_value=0.9, value=0.7, step=0.05)
+        split_ratio = st.slider("Train 비중 (나머지 Test)", min_value=0, max_value=1, value=0.5, step=0.05)
         objective_metric = st.selectbox("목표 지표", ["수익률 (%)", "승률", "샤프", "Profit Factor", "MDD (%)"], index=0)
         objective_mode = "min" if objective_metric == "MDD (%)" else "max"
         n_trials = st.number_input("탐색 시도 횟수 (랜덤)", value=200, min_value=20, step=20)
@@ -1548,13 +1548,14 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                 if len(df_auto) > 0:
                     best = df_auto.iloc[0].to_dict()
                     st.write({k: best[k] for k in [
-                        "ma_buy","offset_ma_buy","offset_cl_buy","buy_operator",
-                        "ma_sell","offset_ma_sell","offset_cl_sell","sell_operator",
+                        "offset_cl_buy","buy_operator","offset_ma_buy","ma_buy",
+                        "offset_cl_sell","sell_operator","offset_ma_sell","ma_sell",
                         "use_trend_in_buy","use_trend_in_sell",
-                        "ma_compare_short","ma_compare_long",
-                        "offset_compare_short","offset_compare_long",
+                        "offset_compare_short","ma_compare_short",
+                        "offset_compare_long","ma_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
