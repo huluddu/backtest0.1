@@ -277,12 +277,12 @@ PRESETS = {
 
     "SOXL 전략2": {
         "signal_ticker": "SOXL", "trade_ticker": "SOXL",
-        "offset_cl_buy": 25, "buy_operator": ">", "offset_ma_buy": 15, "ma_buy": 10,
-        "offset_cl_sell": 5, "sell_operator": ">", "offset_ma_sell": 5, "ma_sell": 15,
-        "use_trend_in_buy": False, "use_trend_in_sell": True,
-        "offset_compare_short": 1, "ma_compare_short": 15,
-        "offset_compare_long": 15, "ma_compare_long": 15,
-        "stop_loss_pct": 0.0, "take_profit_pct": 5.0
+        "offset_cl_buy": 25, "buy_operator": ">", "offset_ma_buy": 25, "ma_buy": 5,
+        "offset_cl_sell": 5, "sell_operator": ">", "offset_ma_sell": 25, "ma_sell": 20,
+        "use_trend_in_buy": True, "use_trend_in_sell": True,
+        "offset_compare_short": 25, "ma_compare_short": 25,
+        "offset_compare_long": 1, "ma_compare_long": 25,         
+        "stop_loss_pct": 30.0, "take_profit_pct": 10.0
     },
 
     "SOXL 전략3": {
@@ -576,10 +576,7 @@ def backtest_fast(
 
         just_bought = False
         exec_price = None  # 이번 턴 체결가(있으면 기록)
-        signal = "HOLD"    # ← 없으면 추가
-        risk_closed_today = False  # ← 추가 (오늘 손절/익절로 청산했는지 표시)
-        just_bought_today = False 
-        
+
         # -------------------------------------------------
         # (A) 예약 주문 체결 처리: i가 도래하면 먼저 체결
         # -------------------------------------------------
@@ -601,19 +598,16 @@ def backtest_fast(
         just_bought = False
         exec_price = None
         signal = "HOLD"
-        
-        if (not risk_closed_today) and (pending_action is not None) and (pending_due_idx == i):
+
+        if (pending_action is not None) and (pending_due_idx == i):
             signal, exec_price, just_bought = _exec_pending(pending_action)
-            
-    # 오늘 시가에 막 체결된 BUY는 오늘 intraday TP/SL 체크를 건너뛰기 위함
-            if str(signal).startswith("BUY"):
-                just_bought_today = True
-            if str(signal).startswith("SELL"):
+            if signal == "SELL":
                 buy_price = None
             pending_action, pending_due_idx = None, None
             
         executed_today = (signal in ("BUY", "SELL")) 
 
+        # -------------------------------------------------
         # -------------------------------------------------
 
         # 값 가져오기
@@ -651,78 +645,69 @@ def backtest_fast(
         
         # ===== Intraday 손절/익절 체크 (보유 시 즉시 체결; 예약보다 우선) =====
         stop_hit, take_hit, intraday_px = (False, False, None)
-        risk_closed_today = False
-        
         if position > 0.0 and (stop_loss_pct > 0 or take_profit_pct > 0):
             stop_hit, take_hit, intraday_px = _check_intraday_exit(buy_price, open_today, high_today, low_today)
 
         if position > 0.0 and (stop_hit or take_hit):
+            # 최소보유일 무시 + 오늘 바로 체결
             px = intraday_px if intraday_px is not None else close_today
             fill = _fill_sell(px)
-            cash = position * fill
-            position = 0.0
-            signal = "SELL(리스크)"         # 명확히 표기
-            exec_price = fill    
-            buy_price = None         
-            pending_action, pending_due_idx = None, None
-            risk_closed_today = True        # ← 오늘은 신규 예약 금지
-
-        # ===== (A) 전일 예약 체결 =====
-        if (not risk_closed_today) and (pending_action is not None) and (pending_due_idx == i):
-            signal, exec_price, just_bought = _exec_pending(pending_action)
-
-            # 오늘 막 체결된 BUY → intraday TP/SL 제외를 위해 플래그 세팅
-            if str(signal).startswith("BUY"):
-                just_bought_today = True
-            if str(signal).startswith("SELL"):
-                buy_price = None
-
+            cash = position * fill; position = 0.0
+            signal = "SELL"; exec_price = fill; buy_price = None
+            # 이 날에는 더 이상 예약/추가 체결 잡지 않음
             pending_action, pending_due_idx = None, None
 
-        # ===== 조건 계산 (순수 규칙만) =====
         base_sell = sell_condition
         can_sell  = (position > 0.0) and base_sell and (hold_days >= min_hold_days)
-
         def _schedule(action):
-            nonlocal pending_action, pending_due_idx, signal
-            pending_action  = action
+            nonlocal pending_action, pending_due_idx
+            pending_action = action
             pending_due_idx = i + int(execution_lag_days)
-            # 예약 신호는 로그에서 구분 가능하게
-            if signal == "HOLD":
-                signal = "BUY(예약)" if action == "BUY" else "SELL(예약)"
+            
+   
+        # ===== 체결 =====
+        # ===== 조건 계산 =====
+        # (이전 코드의 buy_condition / sell_condition 계산은 그대로 사용)
+        # ...
+        base_sell = (sell_condition)  # stop/take는 위에서 이미 처리했으므로 여기선 순수 규칙만
+        can_sell  = (position > 0.0) and base_sell and (hold_days >= min_hold_days)
 
-        # ===== 신규 예약 생성 (sb 규칙 적용) =====
-        if not risk_closed_today:
-            if sb == "1":
-                if buy_condition and sell_condition:
-                    if position == 0.0:
-                        _schedule("BUY")
-                    elif can_sell:
+        # ===== 체결 대신 "예약"만 생성 =====
+        # sb: "1","2","3" 행동 규칙은 그대로 적용하여 '오늘 예약할 액션'을 결정
+
+        if sb == "1":
+            if buy_condition and sell_condition:
+                if position == 0.0:
+                    _schedule("BUY")
+                else:
+                    if can_sell:
                         _schedule("SELL")
-                elif position == 0.0 and buy_condition:
-                    _schedule("BUY")
-                elif can_sell:
-                    _schedule("SELL")
+            elif position == 0.0 and buy_condition:
+                _schedule("BUY")
+            elif can_sell:
+                _schedule("SELL")
 
-            elif sb == "2":
-                if buy_condition and sell_condition:
-                    if position == 0.0:
-                        _schedule("BUY")  # 보유 중이면 HOLD
-                elif position == 0.0 and buy_condition:
+        elif sb == "2":
+            if buy_condition and sell_condition:
+                if position == 0.0:
                     _schedule("BUY")
-                elif can_sell:
-                    _schedule("SELL")
+                # 보유 중이면 HOLD (예약 안 걸음)
+            elif position == 0.0 and buy_condition:
+                _schedule("BUY")
+            elif can_sell:
+                _schedule("SELL")
 
-            else:  # sb == "3"
-                if buy_condition and sell_condition:
-                    if position > 0.0 and can_sell:
-                        _schedule("SELL")  # 포지션 없으면 HOLD
-                elif (position == 0.0) and buy_condition:
-                    _schedule("BUY")
-                elif can_sell:
+        else:  # '3'
+            if buy_condition and sell_condition:
+                if position > 0.0 and can_sell:
                     _schedule("SELL")
+                # 포지션 없으면 HOLD
+            elif (position == 0.0) and buy_condition:
+                _schedule("BUY")
+            elif can_sell:
+                _schedule("SELL")
 
-       
+        
 
         # 보유일 카운터
         if position > 0.0:
@@ -841,11 +826,7 @@ def backtest_fast(
         "최종 자산": round(final_asset)
     }
 
-
-###################################
 # ===== Auto Optimizer (Train/Test) =====
-
-
 def _score_from_summary(summary: dict, metric: str, mode: str = "max"):
     """
     summary: backtest_fast() 결과 요약 dict (매매 로그 제외)
@@ -951,8 +932,6 @@ def auto_search_train_test(
     execution_price_mode="next_close",
     constraints=None,               # {"min_trades": 5, "min_winrate": 0.0, "max_mdd": None}
 ):
-
-    
     """랜덤 탐색 기반 자동 최적화 + Train/Test 일반화 성능 확인."""
     constraints = constraints or {}
     min_trades  = constraints.get("min_trades", 0)
@@ -1057,11 +1036,11 @@ def auto_search_train_test(
 
         # 파라미터 기록
         row.update({
-            "offset_cl_buy": params["offset_cl_buy"], "buy_operator": params["buy_operator"], "offset_ma_buy": params["offset_ma_buy"], "ma_buy": params["ma_buy"],
-            "offset_cl_sell": params["offset_cl_sell"], "sell_operator": params["sell_operator"], "offset_ma_sell": params["offset_ma_sell"],"ma_sell": params["ma_sell"],
+            "ma_buy": params["ma_buy"], "offset_ma_buy": params["offset_ma_buy"], "offset_cl_buy": params["offset_cl_buy"], "buy_operator": params["buy_operator"],
+            "ma_sell": params["ma_sell"], "offset_ma_sell": params["offset_ma_sell"], "offset_cl_sell": params["offset_cl_sell"], "sell_operator": params["sell_operator"],
             "use_trend_in_buy": params["use_trend_in_buy"], "use_trend_in_sell": params["use_trend_in_sell"],
-            "offset_compare_short": params["offset_compare_short"], "ma_compare_short": params["ma_compare_short"],
-            "offset_compare_long": params["offset_compare_long"], "ma_compare_long": params["ma_compare_long"],
+            "ma_compare_short": params["ma_compare_short"], "ma_compare_long": params["ma_compare_long"],
+            "offset_compare_short": params["offset_compare_short"], "offset_compare_long": params["offset_compare_long"],
             "stop_loss_pct": params["stop_loss_pct"], "take_profit_pct": params["take_profit_pct"],
             "min_hold_days": params["min_hold_days"]
         })
@@ -1449,7 +1428,7 @@ with st.expander("🎲 랜덤 시뮬 변수 후보 입력", expanded=False):
     with colR:
         txt_off_cmp_s         = st.text_input("offset_compare_short 후보", "1,5,15,25")
         txt_ma_cmp_s          = st.text_input("ma_compare_short 후보",  "5,10,15,20,25")
-        txt_off_cmp_l         = st.text_input("offset_compare_long 후보",  "1,5,15,25")
+        txt_off_cmp_l         = st.text_input("offset_compare_long 후보",  "1")
         txt_ma_cmp_l          = st.text_input("ma_compare_long 후보",   "same")
 
         txt_use_trend_buy     = st.text_input("use_trend_in_buy 후보(True/False)",  "True,False")
@@ -1513,7 +1492,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
 """)
     colA, colB = st.columns(2)
     with colA:
-        split_ratio = st.slider("Train 비중 (나머지 Test)", min_value=0.0, max_value=1.0, value=0.5, step=0.05)
+        split_ratio = st.slider("Train 비중 (나머지 Test)", min_value=0.5, max_value=0.9, value=0.7, step=0.05)
         objective_metric = st.selectbox("목표 지표", ["수익률 (%)", "승률", "샤프", "Profit Factor", "MDD (%)"], index=0)
         objective_mode = "min" if objective_metric == "MDD (%)" else "max"
         n_trials = st.number_input("탐색 시도 횟수 (랜덤)", value=200, min_value=20, step=20)
@@ -1569,10 +1548,11 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                 if len(df_auto) > 0:
                     best = df_auto.iloc[0].to_dict()
                     st.write({k: best[k] for k in [
-                        "offset_cl_buy","buy_operator","offset_ma_buy","ma_buy",
-                        "offset_cl_sell","sell_operator","offset_ma_sell","ma_sell",
+                        "ma_buy","offset_ma_buy","offset_cl_buy","buy_operator",
+                        "ma_sell","offset_ma_sell","offset_cl_sell","sell_operator",
                         "use_trend_in_buy","use_trend_in_sell",
-                        "offset_compare_short","ma_compare_short",
-                        "offset_compare_long","ma_compare_long",
+                        "ma_compare_short","ma_compare_long",
+                        "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
