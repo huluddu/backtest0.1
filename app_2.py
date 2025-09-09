@@ -279,7 +279,7 @@ PRESETS = {
         "signal_ticker": "SOXL", "trade_ticker": "SOXL",
         "offset_cl_buy": 25, "buy_operator": ">", "offset_ma_buy": 15, "ma_buy": 10,
         "offset_cl_sell": 5, "sell_operator": ">", "offset_ma_sell": 5, "ma_sell": 15,
-        "use_trend_in_buy": Flase, "use_trend_in_sell": True,
+        "use_trend_in_buy": False, "use_trend_in_sell": True,
         "offset_compare_short": 1, "ma_compare_short": 15,
         "offset_compare_long": 15, "ma_compare_long": 15,
         "stop_loss_pct": 0.0, "take_profit_pct": 5.0
@@ -1561,6 +1561,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_long","ma_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
