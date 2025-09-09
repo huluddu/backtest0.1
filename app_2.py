@@ -578,6 +578,7 @@ def backtest_fast(
         exec_price = None  # 이번 턴 체결가(있으면 기록)
         signal = "HOLD"    # ← 없으면 추가
         risk_closed_today = False  # ← 추가 (오늘 손절/익절로 청산했는지 표시)
+        just_bought_today = False 
         
         # -------------------------------------------------
         # (A) 예약 주문 체결 처리: i가 도래하면 먼저 체결
@@ -603,7 +604,11 @@ def backtest_fast(
         
         if (not risk_closed_today) and (pending_action is not None) and (pending_due_idx == i):
             signal, exec_price, just_bought = _exec_pending(pending_action)
-            if signal == "SELL":
+            
+    # 오늘 시가에 막 체결된 BUY는 오늘 intraday TP/SL 체크를 건너뛰기 위함
+            if str(signal).startswith("BUY"):
+                just_bought_today = True
+            if str(signal).startswith("SELL"):
                 buy_price = None
             pending_action, pending_due_idx = None, None
             
@@ -651,70 +656,72 @@ def backtest_fast(
         if position > 0.0 and (stop_loss_pct > 0 or take_profit_pct > 0):
             stop_hit, take_hit, intraday_px = _check_intraday_exit(buy_price, open_today, high_today, low_today)
 
-        if position > 0.0 and (stop_hit or take_hit): # 최소보유일 무시 + 오늘 바로 체결
+        if position > 0.0 and (stop_hit or take_hit):
             px = intraday_px if intraday_px is not None else close_today
             fill = _fill_sell(px)
             cash = position * fill
             position = 0.0
-            signal = "SELL(리스크)"     # ← 명확히 표기
-            exec_price = fill
-            buy_price = None           # 오늘은 예약도 금지
+            signal = "SELL(리스크)"         # 명확히 표기
+            exec_price = fill    
+            buy_price = None         
             pending_action, pending_due_idx = None, None
-            risk_closed_today = True     # ← 반드시 추가
+            risk_closed_today = True        # ← 오늘은 신규 예약 금지
 
-        if not risk_closed_today and (pending_action is not None) and (pending_due_idx == i):
+        # ===== (A) 전일 예약 체결 =====
+        if (not risk_closed_today) and (pending_action is not None) and (pending_due_idx == i):
             signal, exec_price, just_bought = _exec_pending(pending_action)
-            if signal == "SELL": buy_price = None
-            pending_action, pending_due_idx = None, None
-            
 
+            # 오늘 막 체결된 BUY → intraday TP/SL 제외를 위해 플래그 세팅
+            if str(signal).startswith("BUY"):
+                just_bought_today = True
+            if str(signal).startswith("SELL"):
+                buy_price = None
+
+            pending_action, pending_due_idx = None, None
+
+        # ===== 조건 계산 (순수 규칙만) =====
         base_sell = sell_condition
         can_sell  = (position > 0.0) and base_sell and (hold_days >= min_hold_days)
+
         def _schedule(action):
-            nonlocal pending_action, pending_due_idx
-            pending_action = action
+            nonlocal pending_action, pending_due_idx, signal
+            pending_action  = action
             pending_due_idx = i + int(execution_lag_days)
-            
-   
-        # ===== 체결 =====
-        # ===== 조건 계산 =====
-        # (이전 코드의 buy_condition / sell_condition 계산은 그대로 사용)
-        # ...
-        base_sell = (sell_condition)  # stop/take는 위에서 이미 처리했으므로 여기선 순수 규칙만
-        can_sell  = (position > 0.0) and base_sell and (hold_days >= min_hold_days)
+            # 예약 신호는 로그에서 구분 가능하게
+            if signal == "HOLD":
+                signal = "BUY(예약)" if action == "BUY" else "SELL(예약)"
 
-        # ===== 체결 대신 "예약"만 생성 =====
-        # sb: "1","2","3" 행동 규칙은 그대로 적용하여 '오늘 예약할 액션'을 결정
-
+        # ===== 신규 예약 생성 (sb 규칙 적용) =====
         if not risk_closed_today:
             if sb == "1":
                 if buy_condition and sell_condition:
                     if position == 0.0:
                         _schedule("BUY")
-                    else:
-                        if can_sell:
-                            _schedule("SELL")
-                        elif position == 0.0 and buy_condition:
-                            _schedule("BUY")
-                        elif can_sell:
-                            _schedule("SELL")
-                        
+                    elif can_sell:
+                        _schedule("SELL")
+                elif position == 0.0 and buy_condition:
+                    _schedule("BUY")
+                elif can_sell:
+                    _schedule("SELL")
+
             elif sb == "2":
                 if buy_condition and sell_condition:
                     if position == 0.0:
-                        _schedule("BUY") # 보유 중이면 HOLD (예약 안 걸음)
-                    elif position == 0.0 and buy_condition:
-                        _schedule("BUY")
-                    elif can_sell:
-                        _schedule("SELL")
-            else:  # '3'
+                        _schedule("BUY")  # 보유 중이면 HOLD
+                elif position == 0.0 and buy_condition:
+                    _schedule("BUY")
+                elif can_sell:
+                    _schedule("SELL")
+
+            else:  # sb == "3"
                 if buy_condition and sell_condition:
                     if position > 0.0 and can_sell:
-                        _schedule("SELL")            # 포지션 없으면 HOLD
-                    elif (position == 0.0) and buy_condition:
-                        _schedule("BUY")
-                    elif can_sell:
-                        _schedule("SELL")
+                        _schedule("SELL")  # 포지션 없으면 HOLD
+                elif (position == 0.0) and buy_condition:
+                    _schedule("BUY")
+                elif can_sell:
+                    _schedule("SELL")
+
        
 
         # 보유일 카운터
@@ -1569,32 +1576,3 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_long","ma_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
