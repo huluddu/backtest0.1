@@ -662,7 +662,7 @@ def backtest_fast(
         if not risk_closed_today and (pending_action is not None) and (pending_due_idx == i):
             signal, exec_price, just_bought = _exec_pending(pending_action)
             if signal == "SELL": buy_price = None
-                pending_action, pending_due_idx = None, None
+            pending_action, pending_due_idx = None, None
             
 
         base_sell = sell_condition
@@ -1566,6 +1566,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_long","ma_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
