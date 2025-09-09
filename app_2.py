@@ -608,7 +608,6 @@ def backtest_fast(
         executed_today = (signal in ("BUY", "SELL")) 
 
         # -------------------------------------------------
-        # -------------------------------------------------
 
         # 값 가져오기
         try:
@@ -645,6 +644,8 @@ def backtest_fast(
         
         # ===== Intraday 손절/익절 체크 (보유 시 즉시 체결; 예약보다 우선) =====
         stop_hit, take_hit, intraday_px = (False, False, None)
+        risk_closed_today = False
+        
         if position > 0.0 and (stop_loss_pct > 0 or take_profit_pct > 0):
             stop_hit, take_hit, intraday_px = _check_intraday_exit(buy_price, open_today, high_today, low_today)
 
@@ -656,6 +657,13 @@ def backtest_fast(
             signal = "SELL"; exec_price = fill; buy_price = None
             # 이 날에는 더 이상 예약/추가 체결 잡지 않음
             pending_action, pending_due_idx = None, None
+            risk_closed_today = True                      # 🚨 오늘은 신규 예약 금지
+
+        if not risk_closed_today and (pending_action is not None) and (pending_due_idx == i):
+            signal, exec_price, just_bought = _exec_pending(pending_action)
+            if signal == "SELL": buy_price = None
+                pending_action, pending_due_idx = None, None
+            
 
         base_sell = sell_condition
         can_sell  = (position > 0.0) and base_sell and (hold_days >= min_hold_days)
@@ -675,39 +683,36 @@ def backtest_fast(
         # ===== 체결 대신 "예약"만 생성 =====
         # sb: "1","2","3" 행동 규칙은 그대로 적용하여 '오늘 예약할 액션'을 결정
 
-        if sb == "1":
-            if buy_condition and sell_condition:
-                if position == 0.0:
-                    _schedule("BUY")
-                else:
-                    if can_sell:
+        if not risk_closed_today:
+            if sb == "1":
+                if buy_condition and sell_condition:
+                    if position == 0.0:
+                        _schedule("BUY")
+                    else:
+                        if can_sell:
+                            _schedule("SELL")
+                        elif position == 0.0 and buy_condition:
+                            _schedule("BUY")
+                        elif can_sell:
+                            _schedule("SELL")
+                        
+            elif sb == "2":
+                if buy_condition and sell_condition:
+                    if position == 0.0:
+                        _schedule("BUY") # 보유 중이면 HOLD (예약 안 걸음)
+                    elif position == 0.0 and buy_condition:
+                        _schedule("BUY")
+                    elif can_sell:
                         _schedule("SELL")
-            elif position == 0.0 and buy_condition:
-                _schedule("BUY")
-            elif can_sell:
-                _schedule("SELL")
-
-        elif sb == "2":
-            if buy_condition and sell_condition:
-                if position == 0.0:
-                    _schedule("BUY")
-                # 보유 중이면 HOLD (예약 안 걸음)
-            elif position == 0.0 and buy_condition:
-                _schedule("BUY")
-            elif can_sell:
-                _schedule("SELL")
-
-        else:  # '3'
-            if buy_condition and sell_condition:
-                if position > 0.0 and can_sell:
-                    _schedule("SELL")
-                # 포지션 없으면 HOLD
-            elif (position == 0.0) and buy_condition:
-                _schedule("BUY")
-            elif can_sell:
-                _schedule("SELL")
-
-        
+            else:  # '3'
+                if buy_condition and sell_condition:
+                    if position > 0.0 and can_sell:
+                        _schedule("SELL")            # 포지션 없으면 HOLD
+                    elif (position == 0.0) and buy_condition:
+                        _schedule("BUY")
+                    elif can_sell:
+                        _schedule("SELL")
+       
 
         # 보유일 카운터
         if position > 0.0:
@@ -1561,6 +1566,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_long","ma_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
