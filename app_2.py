@@ -582,17 +582,31 @@ def backtest_fast(
         # -------------------------------------------------
         # 체결가 기준: 다음날 시가/종가 선택
         def _exec_pending(action):
-            nonlocal cash, position, buy_price, hold_days
-            px_base = xO[i] if execution_price_mode == "next_open" else x_trd[i]
-            if action == "BUY" and position == 0.0:
-                fill = _fill_buy(px_base)
-                position = cash / fill; cash = 0.0
-                buy_price = fill         # 반드시 기록
-                return "BUY", fill, True  # (signal, exec_price, just_bought)
-            elif action == "SELL" and position > 0.0:
-                fill = _fill_sell(px_base)
-                cash = position * fill; position = 0.0
-                return "SELL", fill, False
+            nonlocal cash, position, hold_days, buy_price, signal, exec_price
+            px = get_exec_price(i, mode=execution_price_mode)  # 당신 코드에서 쓰는 체결가 함수/로직 그대로
+            fee_mul = (1 - fee_bps / 10000.0)
+            slip_mul = (1 - slip_bps / 10000.0)
+            
+            if action == "BUY":
+                if cash > 0.0:
+                    qty = (cash / px)
+                    position += qty
+                    cash = 0.0
+                    signal = "BUY"
+                    buy_price = px
+                    hold_days = 0
+                return "BUY", px, True
+            
+            elif action == "SELL":     
+                if position > 0.0:
+                    cash += position * px * fee_mul * slip_mul
+                    position = 0.0            # ★ 반드시 0으로 만든다          # 부동소수점 찌꺼기 방지
+                    if abs(position) < 1e-12:
+                        position = 0.0
+                    signal = "SELL"
+                    buy_price = None
+                    hold_days = 0
+                return "SELL", px, False
             return "HOLD", None, False
 
         just_bought = False
@@ -1555,4 +1569,5 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
