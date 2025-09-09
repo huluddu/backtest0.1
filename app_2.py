@@ -576,7 +576,9 @@ def backtest_fast(
 
         just_bought = False
         exec_price = None  # 이번 턴 체결가(있으면 기록)
-
+        signal = "HOLD"    # ← 없으면 추가
+        risk_closed_today = False  # ← 추가 (오늘 손절/익절로 청산했는지 표시)
+        
         # -------------------------------------------------
         # (A) 예약 주문 체결 처리: i가 도래하면 먼저 체결
         # -------------------------------------------------
@@ -599,11 +601,11 @@ def backtest_fast(
         exec_price = None
         signal = "HOLD"
 
-        if (pending_action is not None) and (pending_due_idx == i):
-            signal, exec_price, just_bought = _exec_pending(pending_action)
-            if signal == "SELL":
-                buy_price = None
-            pending_action, pending_due_idx = None, None
+       if (not risk_closed_today) and (pending_action is not None) and (pending_due_idx == i):
+           signal, exec_price, just_bought = _exec_pending(pending_action)
+           if signal == "SELL":
+               buy_price = None
+           pending_action, pending_due_idx = None, None
             
         executed_today = (signal in ("BUY", "SELL")) 
 
@@ -649,15 +651,16 @@ def backtest_fast(
         if position > 0.0 and (stop_loss_pct > 0 or take_profit_pct > 0):
             stop_hit, take_hit, intraday_px = _check_intraday_exit(buy_price, open_today, high_today, low_today)
 
-        if position > 0.0 and (stop_hit or take_hit):
-            # 최소보유일 무시 + 오늘 바로 체결
+        if position > 0.0 and (stop_hit or take_hit): # 최소보유일 무시 + 오늘 바로 체결
             px = intraday_px if intraday_px is not None else close_today
             fill = _fill_sell(px)
-            cash = position * fill; position = 0.0
-            signal = "SELL"; exec_price = fill; buy_price = None
-            # 이 날에는 더 이상 예약/추가 체결 잡지 않음
+            cash = position * fill
+            position = 0.0
+            signal = "SELL(리스크)"     # ← 명확히 표기
+            exec_price = fill
+            buy_price = None           # 오늘은 예약도 금지
             pending_action, pending_due_idx = None, None
-            risk_closed_today = True                      # 🚨 오늘은 신규 예약 금지
+            risk_closed_today = True     # ← 반드시 추가
 
         if not risk_closed_today and (pending_action is not None) and (pending_due_idx == i):
             signal, exec_price, just_bought = _exec_pending(pending_action)
@@ -1566,6 +1569,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_long","ma_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
