@@ -1036,11 +1036,11 @@ def auto_search_train_test(
 
         # 파라미터 기록
         row.update({
-            "ma_buy": params["ma_buy"], "offset_ma_buy": params["offset_ma_buy"], "offset_cl_buy": params["offset_cl_buy"], "buy_operator": params["buy_operator"],
-            "ma_sell": params["ma_sell"], "offset_ma_sell": params["offset_ma_sell"], "offset_cl_sell": params["offset_cl_sell"], "sell_operator": params["sell_operator"],
+            "offset_cl_buy": params["offset_cl_buy"], "buy_operator": params["buy_operator"], "offset_ma_buy": params["offset_ma_buy"], "ma_buy": params["ma_buy"],
+            "offset_cl_sell": params["offset_cl_sell"], "sell_operator": params["sell_operator"], "offset_ma_sell": params["offset_ma_sell"],"ma_sell": params["ma_sell"],
             "use_trend_in_buy": params["use_trend_in_buy"], "use_trend_in_sell": params["use_trend_in_sell"],
-            "ma_compare_short": params["ma_compare_short"], "ma_compare_long": params["ma_compare_long"],
-            "offset_compare_short": params["offset_compare_short"], "offset_compare_long": params["offset_compare_long"],
+            "offset_compare_short": params["offset_compare_short"], "ma_compare_short": params["ma_compare_short"],
+            "offset_compare_long": params["offset_compare_long"], "ma_compare_long": params["ma_compare_long"],
             "stop_loss_pct": params["stop_loss_pct"], "take_profit_pct": params["take_profit_pct"],
             "min_hold_days": params["min_hold_days"]
         })
@@ -1428,7 +1428,7 @@ with st.expander("🎲 랜덤 시뮬 변수 후보 입력", expanded=False):
     with colR:
         txt_off_cmp_s         = st.text_input("offset_compare_short 후보", "1,5,15,25")
         txt_ma_cmp_s          = st.text_input("ma_compare_short 후보",  "5,10,15,20,25")
-        txt_off_cmp_l         = st.text_input("offset_compare_long 후보",  "1")
+        txt_off_cmp_l         = st.text_input("offset_compare_long 후보",  "1,5,15,25")
         txt_ma_cmp_l          = st.text_input("ma_compare_long 후보",   "same")
 
         txt_use_trend_buy     = st.text_input("use_trend_in_buy 후보(True/False)",  "True,False")
@@ -1555,6 +1555,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_long","ma_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
