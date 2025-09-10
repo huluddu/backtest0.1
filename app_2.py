@@ -645,16 +645,20 @@ def backtest_fast(
         
         # ===== Intraday 손절/익절 체크 (보유 시 즉시 체결; 예약보다 우선) =====
         stop_hit, take_hit, intraday_px = (False, False, None)
-        if position > 0.0 and (stop_loss_pct > 0 or take_profit_pct > 0):
-            stop_hit, take_hit, intraday_px = _check_intraday_exit(buy_price, open_today, high_today, low_today)
+        # ✅ just_bought 이면서 next_close 체결이면 당일 intraday 체크 금지
 
+        skip_intraday_today = (just_bought and execution_price_mode == "next_close")
+        if (position > 0.0) and (stop_loss_pct > 0 or take_profit_pct > 0) and (not skip_intraday_today):
+            stop_hit, take_hit, intraday_px = _check_intraday_exit(buy_price, open_today, high_today, low_today)
+            
         if position > 0.0 and (stop_hit or take_hit):
-            # 최소보유일 무시 + 오늘 바로 체결
             px = intraday_px if intraday_px is not None else close_today
             fill = _fill_sell(px)
-            cash = position * fill; position = 0.0
-            signal = "SELL"; exec_price = fill; buy_price = None
-            # 이 날에는 더 이상 예약/추가 체결 잡지 않음
+            cash = position * fill
+            position = 0.0
+            signal = "SELL"
+            exec_price = fill
+            buy_price = None
             pending_action, pending_due_idx = None, None
 
         base_sell = sell_condition
@@ -674,40 +678,40 @@ def backtest_fast(
 
         # ===== 체결 대신 "예약"만 생성 =====
         # sb: "1","2","3" 행동 규칙은 그대로 적용하여 '오늘 예약할 액션'을 결정
-
-        if sb == "1":
-            if buy_condition and sell_condition:
-                if position == 0.0:
-                    _schedule("BUY")
-                else:
-                    if can_sell:
-                        _schedule("SELL")
-            elif position == 0.0 and buy_condition:
-                _schedule("BUY")
-            elif can_sell:
-                _schedule("SELL")
-
-        elif sb == "2":
-            if buy_condition and sell_condition:
-                if position == 0.0:
-                    _schedule("BUY")
-                # 보유 중이면 HOLD (예약 안 걸음)
-            elif position == 0.0 and buy_condition:
-                _schedule("BUY")
-            elif can_sell:
-                _schedule("SELL")
-
-        else:  # '3'
-            if buy_condition and sell_condition:
-                if position > 0.0 and can_sell:
-                    _schedule("SELL")
-                # 포지션 없으면 HOLD
-            elif (position == 0.0) and buy_condition:
-                _schedule("BUY")
-            elif can_sell:
-                _schedule("SELL")
-
         
+        if not (signal in ("BUY", "SELL")):
+            if sb == "1":
+                if buy_condition and sell_condition:
+                    if position == 0.0:
+                        _schedule("BUY")
+                    else:
+                        if can_sell:
+                            _schedule("SELL")
+                elif position == 0.0 and buy_condition:
+                    _schedule("BUY")
+                elif can_sell:
+                    _schedule("SELL")
+
+            elif sb == "2":
+                if buy_condition and sell_condition:
+                    if position == 0.0:
+                        _schedule("BUY")
+                elif position == 0.0 and buy_condition:
+                    _schedule("BUY")
+                elif can_sell:
+                    _schedule("SELL")
+
+            else:  # '3'
+                if buy_condition and sell_condition:
+                    if position > 0.0 and can_sell:
+                        _schedule("SELL")
+                elif (position == 0.0) and buy_condition:
+                    _schedule("BUY")
+                elif can_sell:
+                    _schedule("SELL")
+
+            if abs(position) < 1e-12:
+                position = 0.0
 
         # 보유일 카운터
         if position > 0.0:
@@ -1556,4 +1560,5 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
