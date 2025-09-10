@@ -732,6 +732,7 @@ def backtest_fast(
             "종가": round(close_today, 2),       # 차트 표시는 종가 기준
             "체결가": round(exec_price, 4) if exec_price is not None else None,  # 실제 체결가 기록
             "신호": signal,
+            "포지션": round(position, 6),   # 현재 보유 수량 확인용
             "자산": round(total),
             "매수시그널": buy_condition,
             "매도시그널": sell_condition,
@@ -1555,3 +1556,4 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
