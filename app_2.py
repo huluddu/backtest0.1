@@ -582,6 +582,7 @@ if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
             "전략명": name,
             "티커": sig_tic,
             "시그널": res["label"],
+            "최근 BUY": res["last_buy"] or "-",
             "최근 SELL": res["last_sell"] or "-",
             "최근 HOLD": res["last_hold"] or "-",
         })
@@ -1683,6 +1684,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
