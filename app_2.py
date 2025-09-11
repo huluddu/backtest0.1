@@ -386,7 +386,7 @@ PRESETS = {
 # === PRESETS 전체 오늘 시그널 일괄 체크 ===
 def summarize_signal_today(df, p):
     if df.empty:
-        return {"label": "데이터없음", "last_sell": None, "last_hold": None}
+        return {"label": "데이터없음", "last_buy": None, "last_sell": None, "last_hold": None}
 
     df = df.copy().sort_values("Date").reset_index(drop=True)
     df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
@@ -403,7 +403,7 @@ def summarize_signal_today(df, p):
         cl_s = float(df["Close"].iloc[i - p["offset_cl_sell"]])
         ma_s = float(df["MA_SELL"].iloc[i - p["offset_ma_sell"]])
     except Exception:
-        return {"label": "데이터부족", "last_sell": None, "last_hold": None}
+        return {"label": "데이터부족", "last_buy": None, "last_sell": None, "last_hold": None}
 
     # 추세
     trend_ok = True
@@ -463,7 +463,7 @@ def summarize_signal_today(df, p):
         except Exception:
             continue
 
-    return {"label": label, "last_sell": last_sell, "last_hold": last_hold}
+    return {"label": label, "last_buy": last_buy, "last_sell": last_sell, "last_hold": last_hold}
 
 
 #########################################################    
@@ -1687,6 +1687,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
