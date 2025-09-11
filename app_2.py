@@ -417,16 +417,6 @@ def summarize_signal_today(df, params):
     else:
         return "HOLD"
 
-# === UI 버튼 추가 ===
-if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
-    rows = []
-    for name, p in PRESETS.items():
-        sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
-        df = get_data(sig_tic, start_date, end_date)
-        label = summarize_signal_today(df, p)
-        rows.append({"전략명": name, "티커": sig_tic, "시그널": label})
-    st.subheader("📌 PRESETS 오늘 시그널 요약")
-    st.dataframe(pd.DataFrame(rows))
 
 
 #########################################################    
@@ -536,6 +526,19 @@ if st.button("📌 오늘 시그널 체크"):
             use_trend_in_buy=use_trend_in_buy,
             use_trend_in_sell=use_trend_in_sell
         )
+
+# === 시그널 한번에 보기 UI 버튼 추가 ===
+if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
+    rows = []
+    for name, p in PRESETS.items():
+        sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
+        df = get_data(sig_tic, start_date, end_date)
+        label = summarize_signal_today(df, p)
+        rows.append({"전략명": name, "티커": sig_tic, "시그널": label})
+    st.subheader("📌 PRESETS 오늘 시그널 요약")
+    st.dataframe(pd.DataFrame(rows))
+
+
 
 
 ######### 주요 코드 [백테스트] ###########
@@ -1630,6 +1633,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
