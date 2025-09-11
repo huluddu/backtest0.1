@@ -365,6 +365,7 @@ PRESETS = {
         "offset_compare_long": 15, "ma_compare_long": 10,         
         "stop_loss_pct": 0.0, "take_profit_pct": 10.0
     },
+}
 
 
 # === PRESETS 전체 오늘 시그널 일괄 체크 ===
@@ -1629,6 +1630,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
