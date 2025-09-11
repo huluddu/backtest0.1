@@ -426,6 +426,7 @@ def summarize_signal_today(df, p):
     else:                  label = "HOLD"
 
     # 최근 SELL/HOLD 탐색
+    last_buy = None
     last_sell = None
     last_hold = None
     safe_start = max(p["offset_cl_buy"], p["offset_ma_buy"],
@@ -450,6 +451,8 @@ def summarize_signal_today(df, p):
             _buy_ok    = (_buy_base  and trend_pass)       if p.get("use_trend_in_buy", True)  else _buy_base
             _sell_ok   = (_sell_base and (not trend_pass)) if p.get("use_trend_in_sell", False) else _sell_base
 
+            if last_buy is None and _buy_ok:
+                last_buy = pd.to_datetime(df["Date"].iloc[j]).strftime("%Y-%m-%d")
             if last_sell is None and _sell_ok:
                 last_sell = pd.to_datetime(df["Date"].iloc[j]).strftime("%Y-%m-%d")
             if last_hold is None and (not _buy_ok and not _sell_ok):
@@ -1684,6 +1687,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
