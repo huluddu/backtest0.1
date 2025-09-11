@@ -367,6 +367,88 @@ PRESETS = {
     },
 
 
+# === PRESETS 아래에 붙여넣기: 오늘 시그널만 "계산"해서 반환하는 경량 함수 ===
+def _compute_today_signal_label(df: pd.DataFrame, p: dict):
+    """
+    check_signal_today의 판정 공식을 그대로 따르되,
+    Streamlit 출력 없이 'BUY' / 'SELL' / 'HOLD'와 디테일 문자열을 반환.
+    """
+    if df is None or df.empty:
+        return {"signal": "N/A", "date": None, "trend": "데이터 없음", "buy_msg": "", "sell_msg": ""}
+
+    df = df.sort_values("Date").reset_index(drop=True).copy()
+    df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
+
+    # 파라미터 셋업 (필수 키는 PRESETS에 모두 존재)
+    ma_buy  = p["ma_buy"];  ma_sell = p["ma_sell"]
+    off_mb  = p["offset_ma_buy"];     off_ms  = p["offset_ma_sell"]
+    off_cb  = p["offset_cl_buy"];     off_cs  = p["offset_cl_sell"]
+    buy_op  = p["buy_operator"];      sell_op = p["sell_operator"]
+    use_tb  = p.get("use_trend_in_buy", True)
+    use_ts  = p.get("use_trend_in_sell", False)
+    mcs     = p.get("ma_compare_short", None)
+    mcl     = p.get("ma_compare_long",  None)
+    ocs     = p.get("offset_compare_short", 1)
+    ocl     = p.get("offset_compare_long",  1)
+
+    # 이동평균
+    df["MA_BUY"]  = df["Close"].rolling(ma_buy).mean()
+    df["MA_SELL"] = df["Close"].rolling(ma_sell).mean()
+    if mcs and mcl:
+        df["MA_SHORT"] = df["Close"].rolling(int(mcs)).mean()
+        df["MA_LONG"]  = df["Close"].rolling(int(mcl)).mean()
+
+    i = -1  # 오늘(마지막 행)
+    try:
+        cl_b = float(df["Close"].iloc[i - off_cb])
+        ma_b = float(df["MA_BUY"].iloc[i - off_mb])
+        cl_s = float(df["Close"].iloc[i - off_cs])
+        ma_s = float(df["MA_SELL"].iloc[i - off_ms])
+        ref_date = df["Date"].iloc[i].strftime("%Y-%m-%d")
+    except Exception:
+        return {"signal": "N/A", "date": None, "trend": "데이터 부족", "buy_msg": "", "sell_msg": ""}
+
+    # 추세필터
+    trend_ok = True
+    trend_msg = "비활성화"
+    if mcs and mcl:
+        try:
+            ms = float(df["MA_SHORT"].iloc[i - ocs])
+            ml = float(df["MA_LONG"].iloc[i - ocl])
+            trend_ok = (ms >= ml)
+            trend_msg = f"{ms:.2f} vs {ml:.2f} → {'매수추세' if trend_ok else '매도추세'}"
+        except Exception:
+            trend_msg = "❗데이터 부족"
+
+    # 기본 조건
+    buy_base  = (cl_b > ma_b) if (buy_op == ">") else (cl_b < ma_b)
+    sell_base = (cl_s < ma_s) if (sell_op == "<") else (cl_s > ma_s)
+
+    buy_ok  = (buy_base  and trend_ok)       if use_tb else buy_base
+    sell_ok = (sell_base and (not trend_ok)) if use_ts else sell_base
+
+    buy_msg  = f"종가({cl_b:.2f}) {'>' if buy_op=='>' else '<'} MA_BUY({ma_b:.2f})" + (" + 추세필터" if use_tb else "")
+    sell_msg = f"종가({cl_s:.2f}) {'<' if sell_op=='<' else '>'} MA_SELL({ma_s:.2f})" + (" + 역추세필터" if use_ts else "")
+
+    # 동시 발생 처리(간단 표기만: 실제 체결 규칙은 backtest_fast의 sb 로직)
+    if buy_ok and sell_ok:
+        label = "BUY & SELL"
+    elif buy_ok:
+        label = "BUY"
+    elif sell_ok:
+        label = "SELL"
+    else:
+        label = "HOLD"
+
+    return {
+        "signal": label,
+        "date": ref_date,
+        "trend": trend_msg,
+        "buy_msg":  ("✅ " if buy_ok else "❌ ")  + buy_msg,
+        "sell_msg": ("✅ " if sell_ok else "❌ ") + sell_msg,
+    }
+
+
     
 
 }
@@ -476,6 +558,29 @@ if st.button("📌 오늘 시그널 체크"):
             use_trend_in_buy=use_trend_in_buy,
             use_trend_in_sell=use_trend_in_sell
         )
+
+
+# === UI 쪽에 버튼 하나 추가: PRESETS 일괄 스캔 테이블 ===
+if st.button("📚 PRESETS 전체 오늘 시그널 한번에 보기"):
+    rows = []
+    for name, p in PRESETS.items():
+        # 각 전략의 "시그널 판단용 티커"로 데이터 로딩
+        sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
+        df_sig = get_data(sig_tic, start_date, end_date)
+
+        res = _compute_today_signal_label(df_sig, p)
+        rows.append({
+            "전략명": name,
+            "시그널": res["signal"],
+            "기준일": res["date"] or "-",
+            "추세":   res["trend"],
+            "매수판단": res["buy_msg"],
+            "매도판단": res["sell_msg"],
+            "시그널티커": sig_tic,
+            "실매매티커": p.get("trade_ticker", sig_tic),
+        })
+    st.subheader("🧭 PRESETS 오늘 시그널 요약")
+    st.dataframe(pd.DataFrame(rows))
 
 
 ######### 주요 코드 [백테스트] ###########
@@ -1570,6 +1675,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
