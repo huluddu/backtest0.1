@@ -313,7 +313,7 @@ PRESETS = {
     "TSLL 전략": {
         "signal_ticker": "TSLL", "trade_ticker": "TSLL",
         "offset_cl_buy": 5, "buy_operator": ">", "offset_ma_buy": 15, "ma_buy": 20,
-        "offset_cl_sell": 1, "sell_operator": ">", "offset_ma_sell": 25, "ma_sell": 20, 
+        "offset_cl_sell": 1, "sell_operator": "<", "offset_ma_sell": 5, "ma_sell": 10,
         "use_trend_in_buy": True, "use_trend_in_sell": True,
         "offset_compare_short": 25, "ma_compare_short": 15,
         "offset_compare_long": 1, "ma_compare_long": 15,         
@@ -1687,6 +1687,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
