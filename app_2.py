@@ -118,6 +118,44 @@ def get_data(ticker: str, start_date, end_date) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+@st.cache_data(show_spinner=False, ttl=30)
+def fetch_yf_near_realtime_close(ticker: str):
+    """
+    yfinance 1분봉의 가장 최근 종가를 반환.
+    - 보통 수 분 지연(거래소 사정)일 수 있음
+    - ttl=30초 캐시로 과호출 방지
+    """
+    try:
+        df = yf.download(
+            tickers=ticker,
+            period="2d",          # 전일 포함해 공백 캔들 방지
+            interval="1m",
+            auto_adjust=False,
+            progress=False,
+        )
+        if df.empty:
+            return None
+        # 멀티인덱스 방어
+        if isinstance(df.columns, pd.MultiIndex):
+            df = df.droplevel(1, axis=1)
+        last = df.dropna().iloc[-1]
+        return {
+            "price": float(last["Close"]),
+            "timestamp": last.name.to_pydatetime(),
+            "source": "yfinance_1m"
+        }
+    except Exception:
+        return None
+
+
+def get_spot_price_fast_us_only(ticker: str):
+    """
+    미주 전용: yfinance 1분봉만 사용.
+    """
+    out = fetch_yf_near_realtime_close(ticker)
+    return out  # 없으면 None
+
+
 
 # ===== Base prepare =====
 @st.cache_data(show_spinner=False, ttl=1800)
@@ -573,6 +611,35 @@ if st.button("📌 오늘 시그널 체크"):
             use_trend_in_buy=use_trend_in_buy,
             use_trend_in_sell=use_trend_in_sell
         )
+
+with st.expander("⚡ yfinance 1분봉으로 오늘 시그널 재확인", expanded=False):
+    st.caption("미국 티커 전용 · 최신 1분봉 종가로 마지막 캔들만 치환하여 판정합니다.")
+    if st.button("⚡ 최신 가격으로 재판정 (US)"):
+        spot = get_spot_price_fast_us_only(signal_ticker)
+        if not spot:
+            st.warning("yfinance 1분봉에서 최신 값을 가져오지 못했습니다.")
+        else:
+            st.write(f"소스: **{spot['source']}**, 최신가: **{spot['price']:.4f}**, 시각: {spot['timestamp']}")
+            df_today = get_data(signal_ticker, start_date, end_date)
+            if df_today.empty:
+                st.error("기본 데이터 로딩 실패")
+            else:
+                # 마지막 행의 Close만 최신가로 교체
+                df_rt = df_today.copy().sort_values("Date").reset_index(drop=True)
+                df_rt.loc[df_rt.index[-1], "Close"] = float(spot["price"])
+
+                check_signal_today(
+                    df_rt,
+                    ma_buy=ma_buy, offset_ma_buy=offset_ma_buy,
+                    ma_sell=ma_sell, offset_ma_sell=offset_ma_sell,
+                    offset_cl_buy=offset_cl_buy, offset_cl_sell=offset_cl_sell,
+                    ma_compare_short=ma_compare_short if (ma_compare_short or 0) > 0 else None,
+                    ma_compare_long=ma_compare_long if (ma_compare_long or 0) > 0 else None,
+                    offset_compare_short=offset_compare_short,
+                    offset_compare_long=offset_compare_long,
+                    buy_operator=buy_operator, sell_operator=sell_operator,
+                    use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
+                )
 
 # === 시그널 한번에 보기 UI 버튼 추가 ===
 if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
@@ -1687,6 +1754,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
