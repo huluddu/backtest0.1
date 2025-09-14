@@ -642,28 +642,11 @@ with st.expander("⚡ yfinance 1분봉으로 오늘 시그널 재확인", expand
                 )
 
 # === 시그널 한번에 보기 UI 버튼 추가 ===
-# === 시그널 한번에 보기 UI 버튼 (yfinance 1분봉 반영) ===
 if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
     rows = []
     for name, p in PRESETS.items():
         sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
-        src = "EOD"
-
-        # 기본 데이터
         df = get_data(sig_tic, start_date, end_date)
-
-        # 미주(문자 티커, .KS/숫자 아님)면 1분봉 최신가로 마지막 Close 덮어쓰기
-        if not (sig_tic.isdigit() or sig_tic.lower().endswith(".ks")) and not df.empty:
-            spot = fetch_yf_near_realtime_close(sig_tic)
-            if spot and ("price" in spot):
-                try:
-                    df = df.sort_values("Date").reset_index(drop=True)
-                    df.loc[df.index[-1], "Close"] = float(spot["price"])
-                    src = spot.get("source", "yfinance_1m")
-                except Exception:
-                    src = "EOD"
-
-        # 요약 계산
         res = summarize_signal_today(df, p)
         rows.append({
             "전략명": name,
@@ -672,20 +655,57 @@ if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
             "최근 BUY": res["last_buy"] or "-",
             "최근 SELL": res["last_sell"] or "-",
             "최근 HOLD": res["last_hold"] or "-",
-            "가격소스": src,
         })
+    st.subheader("🧭 PRESETS 오늘 시그널 요약")
+    st.dataframe(pd.DataFrame(rows))
 
-    st.subheader("🧭 PRESETS 오늘 시그널 요약 (미주: 1분봉 최신가 반영)")
-    df_out = pd.DataFrame(rows)
+# === PRESETS 일괄 체크 (미주: yfinance 1분봉 최신가 반영) ===
+with st.expander("📚 PRESETS 전체 오늘 시그널 보기 · 1분봉 최신가 반영(US)", expanded=False):
+    st.caption("미국 티커는 yfinance 1분봉의 최신 종가로 마지막 캔들을 치환해 판정합니다. (완전 실시간 아님)")
+    if st.button("▶ PRESETS 일괄 실행 (US 1분봉 반영)"):
+        rows = []
+        for name, p in PRESETS.items():
+            sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
+            src = "EOD"
 
-    # BUY/SELL을 위로 정렬
-    if "시그널" in df_out.columns:
-        cat = pd.Categorical(df_out["시그널"], categories=["BUY","SELL","HOLD","BUY & SELL","데이터부족","데이터없음"], ordered=True)
-        df_out = df_out.assign(_sig=cat).sort_values(["_sig","전략명"]).drop(columns=["_sig"]).reset_index(drop=True)
+            # 1) 기본 데이터 로딩
+            df0 = get_data(sig_tic, start_date, end_date)
 
-    st.dataframe(df_out, use_container_width=True)
-    csv = df_out.to_csv(index=False).encode("utf-8-sig")
-    st.download_button("⬇️ 결과 다운로드 (CSV)", data=csv, file_name="presets_signal_bulk.csv", mime="text/csv")
+            # 2) 미주(문자 티커, 숫자/“.KS” 제외)에 한해 1분봉 최신가로 마지막 Close 교체
+            if not df0.empty and not (sig_tic.isdigit() or sig_tic.lower().endswith(".ks")):
+                spot = fetch_yf_near_realtime_close(sig_tic)
+                if spot and ("price" in spot):
+                    try:
+                        df0 = df0.sort_values("Date").reset_index(drop=True)
+                        df0.loc[df0.index[-1], "Close"] = float(spot["price"])
+                        src = spot.get("source", "yfinance_1m")
+                    except Exception:
+                        src = "EOD"
+
+            # 3) 요약 계산(기존 summarize 함수 재사용)
+            res = summarize_signal_today(df0, p) if not df0.empty else {
+                "label": "데이터없음", "last_buy": None, "last_sell": None, "last_hold": None
+            }
+
+            rows.append({
+                "전략명": name,
+                "티커": sig_tic,
+                "시그널": res["label"],
+                "최근 BUY": res["last_buy"] or "-",
+                "최근 SELL": res["last_sell"] or "-",
+                "최근 HOLD": res["last_hold"] or "-",
+                "가격소스": src,
+            })
+
+        # 4) 표/다운로드
+        df_batch = pd.DataFrame(rows)
+        if "시그널" in df_batch.columns:
+            cat = pd.Categorical(df_batch["시그널"], categories=["BUY","SELL","HOLD","BUY & SELL","데이터부족","데이터없음"], ordered=True)
+            df_batch = df_batch.assign(_sig=cat).sort_values(["_sig","전략명"]).drop(columns=["_sig"]).reset_index(drop=True)
+
+        st.dataframe(df_batch, use_container_width=True)
+        csv = df_batch.to_csv(index=False).encode("utf-8-sig")
+        st.download_button("⬇️ 결과 다운로드 (CSV)", data=csv, file_name="presets_signal_bulk_us_1min.csv", mime="text/csv")
 
 
 
@@ -1782,8 +1802,6 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
-
-
 
 
 
