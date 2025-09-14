@@ -567,10 +567,21 @@ with st.sidebar:
     col_b1, col_b2, col_b3 = st.columns(3)
     with col_b1:
         offset_cl_buy = st.number_input("□일 전 종가", value=preset_values.get("offset_cl_buy", 25), key="offset_cl_buy")
+        
     with col_b2:
-        buy_operator  = st.selectbox("부호", [">","<"], index=[">", "<"].index(preset_values.get("buy_operator", ">")))
-    with col_b3:
-        offset_ma_buy = st.number_input("□일 전", value=preset_values.get("offset_ma_buy", 1), key="offset_ma_buy")
+        buy_operator  = st.selectbox(
+            "매수 조건 부호", [">","<"],
+            index=[">","<"].index(preset_values.get("buy_operator", ">")),
+            key="buy_operator_sel"
+        )
+    
+    with col_s2:
+        sell_operator = st.selectbox(
+            "매도 조건 부호", [">","<"],
+            index=[">","<"].index(preset_values.get("sell_operator", "<")),
+            key="sell_operator_sel"
+        )
+        
     ma_buy = st.number_input("이평(일)", value=preset_values.get("ma_buy", 25), key="ma_buy")
 
     st.caption("매수 추세필터")
@@ -1794,6 +1805,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
