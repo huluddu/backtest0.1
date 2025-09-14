@@ -661,7 +661,45 @@ with tab2:
     if run_bulk_eod or run_bulk_yf1m:
         rows = []
         for name, p in PRESETS.items():
-            tic = p.get("signal_ticker", p.get("trade_ticker
+            tic = p.get("signal_ticker", p.get("trade_ticker"))
+            src = "EOD"
+            df0 = get_data(tic, start_date, end_date)
+
+            if run_bulk_yf1m and (not df0.empty) and (not (tic.isdigit() or tic.lower().endswith(".ks"))):
+                spot = fetch_yf_near_realtime_close(tic)
+                if spot and ("price" in spot):
+                    df0 = df0.sort_values("Date").reset_index(drop=True)
+                    df0.loc[df0.index[-1], "Close"] = float(spot["price"])
+                    src = spot.get("source", "yfinance_1m")
+
+            res = summarize_signal_today(df0, p) if not df0.empty else {"label":"데이터없음","last_buy":None,"last_sell":None,"last_hold":None}
+            rows.append({
+                "전략명": name,
+                "티커": tic,
+                "시그널": res["label"],
+                "최근 BUY": res["last_buy"] or "-",
+                "최근 SELL": res["last_sell"] or "-",
+                "최근 HOLD": res["last_hold"] or "-",
+                "가격소스": src
+            })
+
+        df_batch = pd.DataFrame(rows)
+        if "시그널" in df_batch.columns:
+            cat = pd.Categorical(df_batch["시그널"], categories=["BUY","SELL","HOLD","BUY & SELL","데이터부족","데이터없음"], ordered=True)
+            df_batch = df_batch.assign(_sig=cat).sort_values(["_sig","전략명"]).drop(columns=["_sig"]).reset_index(drop=True)
+
+        # 배지 렌더
+        df_show = df_batch.copy()
+        df_show["시그널"] = df_show["시그널"].apply(lambda x: _badge(x))
+        st.markdown('<p class="small-cap">정렬: BUY → SELL → HOLD → 그 외</p>', unsafe_allow_html=True)
+        st.dataframe(df_show, use_container_width=True, column_config={
+            "시그널": st.column_config.Column(width=120)
+        }, hide_index=True)
+
+        # 다운로드
+        csv = df_batch.to_csv(index=False).encode("utf-8-sig")
+        st.download_button("⬇️ CSV 다운로드", data=csv, file_name=("presets_signal_bulk_us_1min.csv" if run_bulk_yf1m else "presets_signal_bulk.csv"), mime="text/csv")
+
 
 
 ######### 주요 코드 [백테스트] ###########
@@ -1756,6 +1794,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
