@@ -642,11 +642,28 @@ with st.expander("⚡ yfinance 1분봉으로 오늘 시그널 재확인", expand
                 )
 
 # === 시그널 한번에 보기 UI 버튼 추가 ===
+# === 시그널 한번에 보기 UI 버튼 (yfinance 1분봉 반영) ===
 if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
     rows = []
     for name, p in PRESETS.items():
         sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
+        src = "EOD"
+
+        # 기본 데이터
         df = get_data(sig_tic, start_date, end_date)
+
+        # 미주(문자 티커, .KS/숫자 아님)면 1분봉 최신가로 마지막 Close 덮어쓰기
+        if not (sig_tic.isdigit() or sig_tic.lower().endswith(".ks")) and not df.empty:
+            spot = fetch_yf_near_realtime_close(sig_tic)
+            if spot and ("price" in spot):
+                try:
+                    df = df.sort_values("Date").reset_index(drop=True)
+                    df.loc[df.index[-1], "Close"] = float(spot["price"])
+                    src = spot.get("source", "yfinance_1m")
+                except Exception:
+                    src = "EOD"
+
+        # 요약 계산
         res = summarize_signal_today(df, p)
         rows.append({
             "전략명": name,
@@ -655,9 +672,20 @@ if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
             "최근 BUY": res["last_buy"] or "-",
             "최근 SELL": res["last_sell"] or "-",
             "최근 HOLD": res["last_hold"] or "-",
+            "가격소스": src,
         })
-    st.subheader("🧭 PRESETS 오늘 시그널 요약")
-    st.dataframe(pd.DataFrame(rows))
+
+    st.subheader("🧭 PRESETS 오늘 시그널 요약 (미주: 1분봉 최신가 반영)")
+    df_out = pd.DataFrame(rows)
+
+    # BUY/SELL을 위로 정렬
+    if "시그널" in df_out.columns:
+        cat = pd.Categorical(df_out["시그널"], categories=["BUY","SELL","HOLD","BUY & SELL","데이터부족","데이터없음"], ordered=True)
+        df_out = df_out.assign(_sig=cat).sort_values(["_sig","전략명"]).drop(columns=["_sig"]).reset_index(drop=True)
+
+    st.dataframe(df_out, use_container_width=True)
+    csv = df_out.to_csv(index=False).encode("utf-8-sig")
+    st.download_button("⬇️ 결과 다운로드 (CSV)", data=csv, file_name="presets_signal_bulk.csv", mime="text/csv")
 
 
 
@@ -1754,6 +1782,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
