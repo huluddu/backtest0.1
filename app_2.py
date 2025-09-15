@@ -628,54 +628,57 @@ if st.button("📌 오늘 시그널 체크"):
 
 #with st.expander("⚡ yfinance 1분봉으로 오늘 시그널 재확인", expanded=False):
 #    st.caption("미국 티커 전용 · 최신 1분봉 종가로 마지막 캔들만 치환하여 판정합니다.")
-    if st.button("⚡ 오늘 시그널 체크 (실시간간)"):
-        spot = get_spot_price_fast_us_only(signal_ticker)
-        if not spot:
-            st.warning("yfinance 1분봉에서 최신 값을 가져오지 못했습니다.")
+if st.button("⚡ 오늘 시그널 체크 (실시간간)"):
+spot = get_spot_price_fast_us_only(signal_ticker)
+if not spot:
+    st.warning("yfinance 1분봉에서 최신 값을 가져오지 못했습니다.")
+else:
+    st.write(f"소스: **{spot['source']}**, 최신가: **{spot['price']:.4f}**, 시각: {spot['timestamp']}")
+    df_today = get_data(signal_ticker, start_date, end_date)
+    if df_today.empty:
+        st.error("기본 데이터 로딩 실패")
+    else:
+        # 1) 원본 보존: 복사본에서만 조작
+        df_rt = df_today.copy().sort_values("Date").drop_duplicates(subset=["Date"]).reset_index(drop=True)
+
+        # 2) 오늘 날짜 행이 있으면 마지막 행 Close 덮어쓰기, 없으면 '오늘' 행 추가
+        try:
+            ts = pd.Timestamp(spot["timestamp"])
+            if ts.tzinfo is not None:
+                ts = ts.tz_convert(None) if hasattr(ts, "tz_convert") else ts.tz_localize(None)
+            today_date = ts.normalize()
+        except Exception:
+            today_date = pd.to_datetime(pd.Timestamp.today().normalize())
+
+        last_date = pd.to_datetime(df_rt["Date"].iloc[-1]).normalize()
+
+        if last_date == today_date:
+            # 이미 오늘 행 존재 → 마지막 Close만 최신가로 교체
+            df_rt.loc[df_rt.index[-1], "Close"] = float(spot["price"])
         else:
-            st.write(f"소스: **{spot['source']}**, 최신가: **{spot['price']:.4f}**, 시각: {spot['timestamp']}")
-            df_today = get_data(signal_ticker, start_date, end_date)
-            if df_today.empty:
-                st.error("기본 데이터 로딩 실패")
-            else:
-                # 1) 원본 보존: 복사본에서만 조작
-                df_rt = df_today.copy().sort_values("Date").drop_duplicates(subset=["Date"]).reset_index(drop=True)
+            # 오늘 행이 없으면 새 행 추가 (일봉 구조상 Close만 있어도 check_signal_today에는 충분)
+            df_rt = pd.concat(
+                [df_rt, pd.DataFrame([{"Date": today_date, "Close": float(spot["price"])}])],
+                ignore_index=True
+            )
 
-                # 2) 오늘 날짜 행이 있으면 마지막 행 Close 덮어쓰기, 없으면 '오늘' 행 추가
-                try:
-                    ts = pd.Timestamp(spot["timestamp"])
-                    if ts.tzinfo is not None:
-                        ts = ts.tz_convert(None) if hasattr(ts, "tz_convert") else ts.tz_localize(None)
-                    today_date = ts.normalize()
-                except Exception:
-                    today_date = pd.to_datetime(pd.Timestamp.today().normalize())
+        st.markdown("**모드:** 실시간(오늘 캔들 기준) 재판정")
 
-                last_date = pd.to_datetime(df_rt["Date"].iloc[-1]).normalize()
+        # 3) ★여기서만 오프셋 0으로 '오늘' 기준 판정 (기존 오늘 시그널 버튼은 그대로 과거 N일 기준 유지)
+        check_signal_today(
+            df_rt,
+            ma_buy=ma_buy, offset_ma_buy=0,           # 오늘 MA
+            ma_sell=ma_sell, offset_ma_sell=0,        # 오늘 MA
+            offset_cl_buy=0, offset_cl_sell=0,        # 오늘 종가
+            ma_compare_short=ma_compare_short if (ma_compare_short or 0) > 0 else None,
+            ma_compare_long=ma_compare_long  if (ma_compare_long  or 0) > 0 else None,
+            offset_compare_short=0, offset_compare_long=0,  # 추세필터도 오늘 기준
+            buy_operator=buy_operator, sell_operator=sell_operator,
+            use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
+        )
 
-                if last_date == today_date:
-                    # 이미 오늘 행 존재 → 마지막 Close만 최신가로 교체
-                    df_rt.loc[df_rt.index[-1], "Close"] = float(spot["price"])
-                else:
-                    # 오늘 행이 없으면 새 행 추가 (일봉 구조상 Close만 있어도 check_signal_today에는 충분)
-                    df_rt = pd.concat(
-                        [df_rt, pd.DataFrame([{"Date": today_date, "Close": float(spot["price"])}])],
-                        ignore_index=True
-                    )
 
-                st.markdown("**모드:** 실시간(오늘 캔들 기준) 재판정")
 
-                # 3) ★여기서만 오프셋 0으로 '오늘' 기준 판정 (기존 오늘 시그널 버튼은 그대로 과거 N일 기준 유지)
-                check_signal_today(
-                    df_rt,
-                    ma_buy=ma_buy, offset_ma_buy=0,           # 오늘 MA
-                    ma_sell=ma_sell, offset_ma_sell=0,        # 오늘 MA
-                    offset_cl_buy=0, offset_cl_sell=0,        # 오늘 종가
-                    ma_compare_short=ma_compare_short if (ma_compare_short or 0) > 0 else None,
-                    ma_compare_long=ma_compare_long  if (ma_compare_long  or 0) > 0 else None,
-                    offset_compare_short=0, offset_compare_long=0,  # 추세필터도 오늘 기준
-                    buy_operator=buy_operator, sell_operator=sell_operator,
-                    use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
-                )
 # === 시그널 한번에 보기 UI 버튼 추가 ===
 if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
     rows = []
@@ -697,86 +700,81 @@ if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
 # === PRESETS 일괄 체크 (미주: yfinance 1분봉 최신가 반영) ===
 #with st.expander("📚 PRESETS 전체 오늘 시그널 보기 · 1분봉 최신가 반영(US)", expanded=False):
 #    st.caption("미국 티커는 yfinance 1분봉의 최신 종가로 '오늘' 캔들을 만들어 판정합니다. (완전 실시간 아님)")
-    if st.button("📚 PRESETS 전체 오늘 시그널 (실시간)"):
-        rows = []
-        for name, p in PRESETS.items():
-            sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
 
-            # 1) 기본(일봉) 데이터
-            df0 = get_data(sig_tic, start_date, end_date)
-            src = "EOD"
+if st.button("📚 PRESETS 전체 오늘 시그널 (실시간)"):
+rows = []
+for name, p in PRESETS.items():
+    sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
 
-            if not df0.empty:
-                df_rt = (
-                    df0.sort_values("Date")
-                       .drop_duplicates(subset=["Date"])
-                       .reset_index(drop=True)
-                )
+    # 1) 기본(일봉) 데이터
+    df0 = get_data(sig_tic, start_date, end_date)
+    src = "EOD"
 
-                # 2) 미주 티커면 1분봉 최신가로 '오늘' 캔들 반영
-                if not (sig_tic.isdigit() or sig_tic.lower().endswith(".ks")):
-                    spot = fetch_yf_near_realtime_close(sig_tic)
-                    if spot and ("price" in spot) and ("timestamp" in spot):
+    if not df0.empty:
+        df_rt = (
+            df0.sort_values("Date")
+               .drop_duplicates(subset=["Date"])
+               .reset_index(drop=True)
+        )
+
+        # 2) 미주 티커면 1분봉 최신가로 '오늘' 캔들 반영
+        if not (sig_tic.isdigit() or sig_tic.lower().endswith(".ks")):
+            spot = fetch_yf_near_realtime_close(sig_tic)
+            if spot and ("price" in spot) and ("timestamp" in spot):
+                try:
+                    ts = pd.Timestamp(spot["timestamp"])
+                    if ts.tzinfo is not None:
                         try:
-                            # 오늘 날짜(naive)로 정규화
-                            ts = pd.Timestamp(spot["timestamp"])
-                            if ts.tzinfo is not None:
-                                # tz 제거
-                                try:
-                                    ts = ts.tz_convert(None)
-                                except Exception:
-                                    ts = ts.tz_localize(None)
-                            today_date = ts.normalize()
-
-                            last_date = pd.to_datetime(df_rt["Date"].iloc[-1]).normalize()
-
-                            if last_date == today_date:
-                                # 이미 오늘 행이 있으면 마지막 Close만 최신가로 교체
-                                df_rt.loc[df_rt.index[-1], "Close"] = float(spot["price"])
-                            else:
-                                # 오늘 행이 없으면 '오늘' 새 행 추가 (일봉 구조상 Close만 있어도 OK)
-                                df_rt = pd.concat([
-                                    df_rt,
-                                    pd.DataFrame([{"Date": today_date, "Close": float(spot["price"])}])
-                                ], ignore_index=True)
-
-                            src = spot.get("source", "yfinance_1m")
+                            ts = ts.tz_convert(None)
                         except Exception:
-                            src = "EOD"
-                else:
-                    # KRX/숫자티커는 EOD 그대로 사용
-                    df_rt = df_rt
-            else:
-                df_rt = df0  # empty
+                            ts = ts.tz_localize(None)
+                    today_date = ts.normalize()
 
-            # 3) '오늘 기준'으로만 판정하도록 오프셋 0으로 로컬 오버라이드
-            if not df_rt.empty:
-                p_rt = dict(p)  # 얕은 복사
-                p_rt.update({
-                    "offset_cl_buy": 0,
-                    "offset_ma_buy": 0,
-                    "offset_cl_sell": 0,
-                    "offset_ma_sell": 0,
-                    "offset_compare_short": 0,
-                    "offset_compare_long": 0,
-                })
-                # ma_compare_*가 0/None이면 추세필터 비활성
-                res = summarize_signal_today(df_rt, p_rt)
-            else:
-                res = {"label": "데이터없음", "last_buy": None, "last_sell": None, "last_hold": None}
+                    last_date = pd.to_datetime(df_rt["Date"].iloc[-1]).normalize()
 
-            rows.append({
-                "전략명": name,
-                "티커": sig_tic,
-                "시그널": res["label"],
-                "최근 BUY": res["last_buy"]  or "-",
-                "최근 SELL": res["last_sell"] or "-",
-                "최근 HOLD": res["last_hold"] or "-",
-                "가격소스": src,
-            })
+                    if last_date == today_date:
+                        df_rt.loc[df_rt.index[-1], "Close"] = float(spot["price"])
+                    else:
+                        df_rt = pd.concat([
+                            df_rt,
+                            pd.DataFrame([{"Date": today_date, "Close": float(spot["price"])}])
+                        ], ignore_index=True)
 
-        st.subheader("🧭 PRESETS 오늘 시그널 요약 (US 1분봉 반영)")
-        st.dataframe(pd.DataFrame(rows))
+                    src = spot.get("source", "yfinance_1m")
+                except Exception:
+                    src = "EOD"
+        else:
+            df_rt = df_rt
+    else:
+        df_rt = df0  # empty
+
+    # 3) '오늘 기준'으로만 판정하도록 오프셋 0으로 로컬 오버라이드
+    if not df_rt.empty:
+        p_rt = dict(p)
+        p_rt.update({
+            "offset_cl_buy": 0,
+            "offset_ma_buy": 0,
+            "offset_cl_sell": 0,
+            "offset_ma_sell": 0,
+            "offset_compare_short": 0,
+            "offset_compare_long": 0,
+        })
+        res = summarize_signal_today(df_rt, p_rt)
+    else:
+        res = {"label": "데이터없음", "last_buy": None, "last_sell": None, "last_hold": None}
+
+    rows.append({
+        "전략명": name,
+        "티커": sig_tic,
+        "시그널": res["label"],
+        "최근 BUY": res["last_buy"] or "-",
+        "최근 SELL": res["last_sell"] or "-",
+        "최근 HOLD": res["last_hold"] or "-",
+        "가격소스": src,
+    })
+
+st.subheader("🧭 PRESETS 오늘 시그널 요약 (US 1분봉 반영)")
+st.dataframe(pd.DataFrame(rows))
 
 
 
@@ -1873,6 +1871,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
