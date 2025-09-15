@@ -629,53 +629,54 @@ if st.button("📌 오늘 시그널 체크"):
 #with st.expander("⚡ yfinance 1분봉으로 오늘 시그널 재확인", expanded=False):
 #    st.caption("미국 티커 전용 · 최신 1분봉 종가로 마지막 캔들만 치환하여 판정합니다.")
 if st.button("⚡ 오늘 시그널 체크 (실시간간)"):
-spot = get_spot_price_fast_us_only(signal_ticker)
-if not spot:
-    st.warning("yfinance 1분봉에서 최신 값을 가져오지 못했습니다.")
-else:
-    st.write(f"소스: **{spot['source']}**, 최신가: **{spot['price']:.4f}**, 시각: {spot['timestamp']}")
-    df_today = get_data(signal_ticker, start_date, end_date)
-    if df_today.empty:
-        st.error("기본 데이터 로딩 실패")
+    spot = get_spot_price_fast_us_only(signal_ticker)
+    if not spot:
+        st.warning("yfinance 1분봉에서 최신 값을 가져오지 못했습니다.")
     else:
-        # 1) 원본 보존: 복사본에서만 조작
-        df_rt = df_today.copy().sort_values("Date").drop_duplicates(subset=["Date"]).reset_index(drop=True)
-
-        # 2) 오늘 날짜 행이 있으면 마지막 행 Close 덮어쓰기, 없으면 '오늘' 행 추가
-        try:
-            ts = pd.Timestamp(spot["timestamp"])
-            if ts.tzinfo is not None:
-                ts = ts.tz_convert(None) if hasattr(ts, "tz_convert") else ts.tz_localize(None)
-            today_date = ts.normalize()
-        except Exception:
-            today_date = pd.to_datetime(pd.Timestamp.today().normalize())
-
-        last_date = pd.to_datetime(df_rt["Date"].iloc[-1]).normalize()
-
-        if last_date == today_date:
-            # 이미 오늘 행 존재 → 마지막 Close만 최신가로 교체
-            df_rt.loc[df_rt.index[-1], "Close"] = float(spot["price"])
+        st.write(f"소스: **{spot['source']}**, 최신가: **{spot['price']:.4f}**, 시각: {spot['timestamp']}")
+        df_today = get_data(signal_ticker, start_date, end_date)
+        if df_today.empty:
+            st.error("기본 데이터 로딩 실패")
         else:
-            # 오늘 행이 없으면 새 행 추가 (일봉 구조상 Close만 있어도 check_signal_today에는 충분)
-            df_rt = pd.concat(
-                [df_rt, pd.DataFrame([{"Date": today_date, "Close": float(spot["price"])}])],
-                ignore_index=True
+            # 1) 원본 보존: 복사본에서만 조작
+            df_rt = df_today.copy().sort_values("Date").drop_duplicates(subset=["Date"]).reset_index(drop=True)
+
+            # 2) 오늘 날짜 행이 있으면 마지막 행 Close 덮어쓰기, 없으면 '오늘' 행 추가
+            try:
+                ts = pd.Timestamp(spot["timestamp"])
+                if ts.tzinfo is not None:
+                    ts = ts.tz_convert(None) if hasattr(ts, "tz_convert") else ts.tz_localize(None)
+                today_date = ts.normalize()
+            except Exception:
+                today_date = pd.to_datetime(pd.Timestamp.today().normalize())
+
+            last_date = pd.to_datetime(df_rt["Date"].iloc[-1]).normalize()
+
+            if last_date == today_date:
+                # 이미 오늘 행 존재 → 마지막 Close만 최신가로 교체
+                df_rt.loc[df_rt.index[-1], "Close"] = float(spot["price"])
+            else:
+                # 오늘 행이 없으면 새 행 추가 (일봉 구조상 Close만 있어도 check_signal_today에는 충분)
+                df_rt = pd.concat(
+                    [df_rt, pd.DataFrame([{"Date": today_date, "Close": float(spot["price"])}])],
+                    ignore_index=True
+                )
+
+            st.markdown("**모드:** 실시간(오늘 캔들 기준) 재판정")
+
+            # 3) ★여기서만 오프셋 0으로 '오늘' 기준 판정 (기존 오늘 시그널 버튼은 그대로 과거 N일 기준 유지)
+            check_signal_today(
+                df_rt,
+                ma_buy=ma_buy, offset_ma_buy=0,           # 오늘 MA
+                ma_sell=ma_sell, offset_ma_sell=0,        # 오늘 MA
+                offset_cl_buy=0, offset_cl_sell=0,        # 오늘 종가
+                ma_compare_short=ma_compare_short if (ma_compare_short or 0) > 0 else None,
+                ma_compare_long=ma_compare_long  if (ma_compare_long  or 0) > 0 else None,
+                offset_compare_short=0, offset_compare_long=0,  # 추세필터도 오늘 기준
+                buy_operator=buy_operator, sell_operator=sell_operator,
+                use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
             )
 
-        st.markdown("**모드:** 실시간(오늘 캔들 기준) 재판정")
-
-        # 3) ★여기서만 오프셋 0으로 '오늘' 기준 판정 (기존 오늘 시그널 버튼은 그대로 과거 N일 기준 유지)
-        check_signal_today(
-            df_rt,
-            ma_buy=ma_buy, offset_ma_buy=0,           # 오늘 MA
-            ma_sell=ma_sell, offset_ma_sell=0,        # 오늘 MA
-            offset_cl_buy=0, offset_cl_sell=0,        # 오늘 종가
-            ma_compare_short=ma_compare_short if (ma_compare_short or 0) > 0 else None,
-            ma_compare_long=ma_compare_long  if (ma_compare_long  or 0) > 0 else None,
-            offset_compare_short=0, offset_compare_long=0,  # 추세필터도 오늘 기준
-            buy_operator=buy_operator, sell_operator=sell_operator,
-            use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
-        )
 
 
 
@@ -1871,6 +1872,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
