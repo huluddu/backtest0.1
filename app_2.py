@@ -628,7 +628,7 @@ if st.button("📌 오늘 시그널 체크"):
 
 #with st.expander("⚡ yfinance 1분봉으로 오늘 시그널 재확인", expanded=False):
 #    st.caption("미국 티커 전용 · 최신 1분봉 종가로 마지막 캔들만 치환하여 판정합니다.")
-if st.button("⚡ 오늘 시그널 체크 (실시간간)"):
+if st.button("⚡ 오늘 시그널 체크 (실시간)"):
     spot = get_spot_price_fast_us_only(signal_ticker)
     if not spot:
         st.warning("yfinance 1분봉에서 최신 값을 가져오지 못했습니다.")
@@ -1879,6 +1879,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
