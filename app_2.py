@@ -626,9 +626,9 @@ if st.button("📌 오늘 시그널 체크"):
             use_trend_in_sell=use_trend_in_sell
         )
 
-with st.expander("⚡ yfinance 1분봉으로 오늘 시그널 재확인", expanded=False):
-    st.caption("미국 티커 전용 · 최신 1분봉 종가로 마지막 캔들만 치환하여 판정합니다.")
-    if st.button("⚡ 최신 가격으로 재판정 (US)"):
+#with st.expander("⚡ yfinance 1분봉으로 오늘 시그널 재확인", expanded=False):
+#    st.caption("미국 티커 전용 · 최신 1분봉 종가로 마지막 캔들만 치환하여 판정합니다.")
+    if st.button("⚡ 오늘 시그널 체크 (실시간간)"):
         spot = get_spot_price_fast_us_only(signal_ticker)
         if not spot:
             st.warning("yfinance 1분봉에서 최신 값을 가져오지 못했습니다.")
@@ -695,9 +695,9 @@ if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
     st.dataframe(pd.DataFrame(rows))
 
 # === PRESETS 일괄 체크 (미주: yfinance 1분봉 최신가 반영) ===
-with st.expander("📚 PRESETS 전체 오늘 시그널 보기 · 1분봉 최신가 반영(US)", expanded=False):
-    st.caption("미국 티커는 yfinance 1분봉의 최신 종가로 '오늘' 캔들을 만들어 판정합니다. (완전 실시간 아님)")
-    if st.button("▶ PRESETS 일괄 실행 (US 1분봉 반영)"):
+#with st.expander("📚 PRESETS 전체 오늘 시그널 보기 · 1분봉 최신가 반영(US)", expanded=False):
+#    st.caption("미국 티커는 yfinance 1분봉의 최신 종가로 '오늘' 캔들을 만들어 판정합니다. (완전 실시간 아님)")
+    if st.button("📚 PRESETS 전체 오늘 시그널 (실시간)"):
         rows = []
         for name, p in PRESETS.items():
             sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
@@ -1873,6 +1873,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
