@@ -191,50 +191,35 @@ def get_mdd(asset_curve):
 
 ###### 1min yfinance 유틸 함수 추가 #########
 @st.cache_data(show_spinner=False, ttl=30)
-def get_yf_1m_grouped_close(ticker: str, tz: str, session_start: str, session_end: str):
-    """
-    yfinance 1분봉을 가져와서 거래소 타임존 기준 하루(session)로 그룹,
-    각 '날짜'의 마지막 Close를 반환.
-    반환: (daily_close: pd.Series(index=date, value=close), last_price: float or None, last_ts: pd.Timestamp or None)
-    """
+def get_yf_1m_session_daily(ticker: str, tz: str, session_start: str, session_end: str):
+    """yfinance 1분봉을 거래소 타임존으로 변환 후, 날짜(session)별 마지막 Close 시리즈 반환."""
     try:
         df = yf.download(
-            tickers=ticker,
-            period="5d",          # 최근 며칠만
-            interval="1m",
-            auto_adjust=False,
-            progress=False,
+            tickers=ticker, period="5d", interval="1m",
+            auto_adjust=False, progress=False,
         )
         if df.empty:
-            return pd.Series(dtype=float), None, None
+            return pd.Series(dtype=float)
 
-        # 멀티인덱스 방어
         if isinstance(df.columns, pd.MultiIndex):
             df = df.droplevel(1, axis=1)
 
-        # 타임존 정리 + 정규장 구간만
+        # yfinance 분봉인덱스 tz-naive → UTC로 가정 후 변환
         if df.index.tz is None:
-            # yfinance는 보통 UTC 타임스탬프를 tz-naive로 줄 수 있음 → UTC로 가정 후 변환
             df.index = df.index.tz_localize("UTC")
         df = df.tz_convert(tz)
+        # 정규장만
         df = df.between_time(session_start, session_end).copy()
-
         if df.empty:
-            return pd.Series(dtype=float), None, None
+            return pd.Series(dtype=float)
 
         df["session"] = df.index.date
         daily_close = df.groupby("session")["Close"].last()
-
-        last_row = df.iloc[-1]
-        last_price = float(last_row["Close"])
-        last_ts = last_row.name
-
-        return daily_close, last_price, last_ts
+        return daily_close
     except Exception:
-        return pd.Series(dtype=float), None, None
+        return pd.Series(dtype=float)
 
-
-### 오늘의 시그널 ####
+### 오늘의 시그널 (일반) ####
 def check_signal_today(
     df,
     ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
@@ -357,6 +342,67 @@ def check_signal_today(
     if not (last_buy_date or last_sell_date or last_hold_date):
         st.warning("❗최근 조건에 부합하는 날을 찾지 못했습니다.")
 
+### 오늘의 시그널 (실시간) ###
+
+def check_signal_today_realtime(
+    df_daily: pd.DataFrame,
+    ticker: str,
+    tz: str = "America/New_York",
+    session_start: str = "09:30",
+    session_end: str = "16:00",
+    *,
+    ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
+    offset_cl_buy, offset_cl_sell,
+    ma_compare_short=None, ma_compare_long=None,
+    offset_compare_short=1, offset_compare_long=1,
+    buy_operator=">", sell_operator="<",
+    use_trend_in_buy=True, use_trend_in_sell=False
+):
+    """
+    1) 1분봉을 세션(date)로 집계해 최근 며칠의 Close를 반영
+    2) '오늘판정'은 모든 오프셋을 0으로 강제
+    3) 기존 check_signal_today를 재사용
+    """
+    dc = get_yf_1m_session_daily(ticker, tz, session_start, session_end)
+
+    df_rt = df_daily.copy().sort_values("Date").reset_index(drop=True)
+    if not df_rt.empty and not dc.empty:
+        df_rt["Date"] = pd.to_datetime(df_rt["Date"])
+        df_rt["__date"] = df_rt["Date"].dt.date
+
+        # 일봉에 세션 종가 반영 (있으면 교체, 없으면 행 추가)
+        for sess_date, sess_close in dc.items():
+            if (df_rt["__date"] == sess_date).any():
+                df_rt.loc[df_rt["__date"] == sess_date, "Close"] = float(sess_close)
+            else:
+                df_rt = pd.concat([df_rt, pd.DataFrame([{
+                    "Date": pd.Timestamp(sess_date), "Close": float(sess_close)
+                }])], ignore_index=True)
+
+        df_rt = (df_rt
+                 .sort_values("Date")
+                 .drop_duplicates(subset=["Date"])
+                 .reset_index(drop=True)
+                 .drop(columns=["__date"], errors="ignore"))
+
+    # === 오늘만 보게 오프셋 0으로 강제 ===
+    check_signal_today(
+        df_rt,
+        ma_buy=ma_buy, offset_ma_buy=0,
+        ma_sell=ma_sell, offset_ma_sell=0,
+        offset_cl_buy=0, offset_cl_sell=0,
+        ma_compare_short=ma_compare_short if (ma_compare_short or 0) > 0 else None,
+        ma_compare_long=ma_compare_long  if (ma_compare_long  or 0) > 0 else None,
+        offset_compare_short=0, offset_compare_long=0,
+        buy_operator=buy_operator, sell_operator=sell_operator,
+        use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
+    )
+
+    # 디버그(선택): 최근 반영된 세션 값을 확인
+    with st.expander("🐞 실시간 세션 집계 디버그", expanded=False):
+        if not dc.empty:
+            st.write("최근 세션 종가", dc.tail(5))
+        st.write("실시간 반영 후 일봉 tail()", df_rt.tail(5))
 
 ####
 
@@ -421,11 +467,7 @@ PRESETS = {
         "offset_compare_short": 1, "ma_compare_short": 20,
         "offset_compare_long": 15, "ma_compare_long": 15,         
         "stop_loss_pct": 0.0, "take_profit_pct": 10.0
-    },
-          
-
-
-    
+    },            
       
     "SOXS를 SOXL 보고 사기 전략": {
         "signal_ticker": "SOXL", "trade_ticker": "SOXS",
@@ -445,8 +487,7 @@ PRESETS = {
         "offset_compare_short": 15, "ma_compare_short": 10,
         "offset_compare_long": 1, "ma_compare_long": 15,         
         "stop_loss_pct": 0.0, "take_profit_pct": 9.0
-    },
- 
+    }, 
 
     "465580 ACE미국빅테크TOP7PLUS": {
         "signal_ticker": "465580", "trade_ticker": "465580",
@@ -674,23 +715,13 @@ if st.button("📌 오늘 시그널 체크"):
 #with st.expander("⚡ yfinance 1분봉으로 오늘 시그널 재확인", expanded=False):
 #    st.caption("미국 티커 전용 · 최신 1분봉 종가로 마지막 캔들만 치환하여 판정합니다.")
 if st.button("⚡ 오늘 시그널 체크 (실시간)"):
-    # 미장 가정: 필요 시 티커별로 tz/세션 분기 가능
-    tz = "America/New_York"
-    session_start, session_end = "09:30", "16:00"
-
-    # 1) 기본(일봉) 데이터
     df_today = get_data(signal_ticker, start_date, end_date)
     if df_today.empty:
         st.error("기본 데이터 로딩 실패")
     else:
-        # 2) 1분봉 → 세션(하루)로 그룹해 '날짜-종가' 시리즈 확보
-        daily_close_1m, last_price, last_ts = get_yf_1m_grouped_close(
-            signal_ticker, tz=tz, session_start=session_start, session_end=session_end
-        )
-
-        if daily_close_1m.empty or last_price is None or last_ts is None:
-            st.warning("yfinance 1분봉에서 유효한 세션별 종가를 가져오지 못했습니다.")
-            # 기본 일봉으로만 체크
+        is_krx = (signal_ticker.isdigit() or signal_ticker.lower().endswith(".ks"))
+        if is_krx:
+            st.warning("국내 티커는 일봉 데이터로 판정합니다.")
             check_signal_today(
                 df_today,
                 ma_buy=ma_buy, offset_ma_buy=offset_ma_buy,
@@ -703,59 +734,21 @@ if st.button("⚡ 오늘 시그널 체크 (실시간)"):
                 use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
             )
         else:
-            st.write(f"소스: yfinance_1m(seat grouped), 최신가: **{last_price:.4f}**, 시각: {last_ts}")
-
-            # 3) 오늘 날짜 계산(거래소 타임존 기준)
-            today_sess_date = pd.Timestamp(last_ts).tz_convert(tz).date()
-
-            # 4) 일봉 DataFrame 정리
-            df_rt = (
-                df_today.copy()
-                        .sort_values("Date")
-                        .drop_duplicates(subset=["Date"])
-                        .reset_index(drop=True)
-            )
-            # 인덱스를 날짜(date)로 맞춰서 매핑하기 쉽게
-            df_rt["Date"] = pd.to_datetime(df_rt["Date"])
-            df_rt["Date_only"] = df_rt["Date"].dt.date
-            df_rt = df_rt[["Date", "Date_only", "Open", "High", "Low", "Close"] if "Open" in df_rt.columns else ["Date", "Date_only", "Close"]]
-
-            # 5) 세션별 1분봉 종가를 오늘/최근 며칠에 반영
-            #    - 존재하는 날짜면 Close 교체, 없으면 새 행 추가
-            for sess_date, sess_close in daily_close_1m.items():
-                if (df_rt["Date_only"] == sess_date).any():
-                    df_rt.loc[df_rt["Date_only"] == sess_date, "Close"] = float(sess_close)
-                else:
-                    df_rt = pd.concat([df_rt, pd.DataFrame([{
-                        "Date": pd.Timestamp(sess_date),
-                        "Date_only": sess_date,
-                        "Close": float(sess_close)
-                    }])], ignore_index=True)
-
-            # 6) 일봉 형태로 되돌림
-            df_rt = df_rt.sort_values("Date").drop_duplicates(subset=["Date"]).reset_index(drop=True)
-            df_rt = df_rt.drop(columns=["Date_only"])
-
-            st.markdown("**모드:** 실시간(1분봉 → 일별 세션 집계) 재판정")
-
-            # 7) ★오늘 기준 판정: 오프셋 0으로 '오늘'만 보게 로컬 오버라이드
-            check_signal_today(
-                df_rt,
-                ma_buy=ma_buy, offset_ma_buy=0,
-                ma_sell=ma_sell, offset_ma_sell=0,
-                offset_cl_buy=0, offset_cl_sell=0,
-                ma_compare_short=ma_compare_short if (ma_compare_short or 0) > 0 else None,
-                ma_compare_long=ma_compare_long  if (ma_compare_long  or 0) > 0 else None,
-                offset_compare_short=0, offset_compare_long=0,
+            check_signal_today_realtime(
+                df_today, signal_ticker,
+                tz="America/New_York", session_start="09:30", session_end="16:00",
+                ma_buy=ma_buy, offset_ma_buy=offset_ma_buy,
+                ma_sell=ma_sell, offset_ma_sell=offset_ma_sell,
+                offset_cl_buy=offset_cl_buy, offset_cl_sell=offset_cl_sell,
+                ma_compare_short=ma_compare_short, ma_compare_long=ma_compare_long,
+                offset_compare_short=offset_compare_short, offset_compare_long=offset_compare_long,
                 buy_operator=buy_operator, sell_operator=sell_operator,
                 use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
             )
+            
             with st.expander("🐞 디버그 로그 보기", expanded=False):
                 st.write(daily_close_1m.tail())
                 st.write({"last_price": last_price, "last_ts": last_ts})
-
-
-
 
 
 
@@ -850,10 +843,6 @@ if st.button("📚 PRESETS 전체 오늘 시그널 (실시간)"):
 
     st.subheader("🧭 PRESETS 오늘 시그널 요약 (1분봉 세션 집계 반영)")
     st.dataframe(pd.DataFrame(rows))
-
-
-
-
 
 
 ######### 주요 코드 [백테스트] ###########
@@ -1948,6 +1937,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
