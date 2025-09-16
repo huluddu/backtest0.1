@@ -1,4 +1,4 @@
-ㅇimport streamlit as st
+import streamlit as st
 import pandas as pd
 import yfinance as yf
 import datetime
@@ -1941,6 +1941,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
