@@ -750,6 +750,13 @@ if st.button("⚡ 오늘 시그널 체크 (실시간)"):
                 buy_operator=buy_operator, sell_operator=sell_operator,
                 use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
             )
+            with st.expander("🐞 디버그 로그 보기", expanded=False):
+                st.write(daily_close_1m.tail())
+                st.write({"last_price": last_price, "last_ts": last_ts})
+
+
+
+
 
 
 # === 시그널 한번에 보기 UI 버튼 추가 ===
@@ -1941,6 +1948,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
