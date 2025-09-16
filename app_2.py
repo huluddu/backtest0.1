@@ -375,51 +375,77 @@ def check_signal_today_realtime(
     use_trend_in_buy=True, use_trend_in_sell=False
 ):
     """
-    1) yfinance 1분봉을 세션(date)로 집계해 최근 며칠 Close를 df_daily에 반영
-    2) 오늘만 보도록 모든 오프셋을 0으로 고정
-    3) 기존 check_signal_today 재사용
+    일봉 df_daily를 기본으로 사용하되,
+    '오늘'만 yfinance 1분봉의 최신가로 Close를 덮어쓴 뒤,
+    원래 전달받은 오프셋들을 그대로 유지하여 check_signal_today 실행.
     """
+    # 1) 1분봉 세션 집계 (최근 며칠 날짜별 마지막 Close) + 최신 바 시각
     daily_close_1m, last_price, last_ts = get_yf_1m_grouped_close(
         ticker, tz=tz, session_start=session_start, session_end=session_end
     )
 
+    # 2) 작업용 일봉 복사
     df_rt = df_daily.copy().sort_values("Date").reset_index(drop=True)
+    df_rt["Date"] = pd.to_datetime(df_rt["Date"])
 
-    # 세션 종가를 df_daily에 합치기
-    if not df_rt.empty and not (daily_close_1m is None) and not daily_close_1m.empty:
-        df_rt["Date"] = pd.to_datetime(df_rt["Date"])
+    # 3) 오늘 세션 날짜 계산 (tz-aware 안전 처리)
+    today_sess_date = None
+    if last_ts is not None:
+        ts = pd.Timestamp(last_ts)
+        if ts.tz is None:
+            ts = ts.tz_localize("UTC").tz_convert(tz)
+        else:
+            ts = ts.tz_convert(tz)
+        today_sess_date = ts.date()
+
+    # 4) 오늘만 분봉 최신가로 패치 (전일/과거일은 EOD 그대로 둠)
+    patched = False
+    if (daily_close_1m is not None) and (not daily_close_1m.empty) and (today_sess_date is not None):
+        # 오늘 세션의 종가(=현재까지의 마지막 1분봉 close)
+        today_close_1m = daily_close_1m.get(today_sess_date, None)
+
         df_rt["__date"] = df_rt["Date"].dt.date
-
-        for sess_date, sess_close in daily_close_1m.items():
-            if (df_rt["__date"] == sess_date).any():
-                df_rt.loc[df_rt["__date"] == sess_date, "Close"] = float(sess_close)
+        if today_close_1m is not None:
+            if (df_rt["__date"] == today_sess_date).any():
+                # 오늘 행이 이미 있으면 Close만 교체
+                df_rt.loc[df_rt["__date"] == today_sess_date, "Close"] = float(today_close_1m)
+                patched = True
             else:
+                # 오늘 행이 없으면 오늘 행 추가 (OHLC가 없을 수 있으니 Close만 필수로 추가)
                 df_rt = pd.concat([df_rt, pd.DataFrame([{
-                    "Date": pd.Timestamp(sess_date), "Close": float(sess_close)
+                    "Date": pd.Timestamp(today_sess_date),
+                    "Close": float(today_close_1m),
                 }])], ignore_index=True)
+                df_rt = df_rt.sort_values("Date").reset_index(drop=True)
+                patched = True
 
-        df_rt = (df_rt.sort_values("Date")
-                      .drop_duplicates(subset=["Date"])
-                      .reset_index(drop=True)
-                      .drop(columns=["__date"], errors="ignore"))
+        df_rt = df_rt.drop(columns=["__date"], errors="ignore")
 
-    # 오늘만 판정 → 오프셋 0 고정
+    # 5) 오프셋은 '유지'하여 기존 일봉 판정 함수 호출
     check_signal_today(
         df_rt,
-        ma_buy=ma_buy, offset_ma_buy=0,
-        ma_sell=ma_sell, offset_ma_sell=0,
-        offset_cl_buy=0, offset_cl_sell=0,
+        ma_buy=ma_buy, offset_ma_buy=offset_ma_buy,
+        ma_sell=ma_sell, offset_ma_sell=offset_ma_sell,
+        offset_cl_buy=offset_cl_buy, offset_cl_sell=offset_cl_sell,
         ma_compare_short=ma_compare_short if (ma_compare_short or 0) > 0 else None,
         ma_compare_long=ma_compare_long  if (ma_compare_long  or 0) > 0 else None,
-        offset_compare_short=0, offset_compare_long=0,
+        offset_compare_short=offset_compare_short, offset_compare_long=offset_compare_long,
         buy_operator=buy_operator, sell_operator=sell_operator,
         use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
     )
 
-    with st.expander("🐞 실시간 세션 집계 디버그", expanded=False):
-        if not (daily_close_1m is None) and not daily_close_1m.empty:
-            st.write("최근 세션 종가", daily_close_1m.tail(5))
-        st.write("머지 후 일봉 tail()", df_rt.tail(5))
+    # 6) 디버그용 (선택)
+    with st.expander("🐞 실시간 패치 디버그", expanded=False):
+        st.write({
+            "ticker": ticker,
+            "patched_today": patched,
+            "today_sess_date": str(today_sess_date) if today_sess_date else None,
+            "last_price": float(last_price) if last_price is not None else None,
+            "last_ts": str(last_ts) if last_ts is not None else None,
+        })
+        if (daily_close_1m is not None) and (not daily_close_1m.empty):
+            st.write("최근 세션별 종가(1분봉 집계) tail(5):", daily_close_1m.tail(5))
+        st.write("패치 후 일봉 tail(5):", df_rt.tail(5))
 
 
     
@@ -1956,6 +1982,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
