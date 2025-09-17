@@ -765,22 +765,23 @@ with st.expander("⚙️ 체결/비용 & 기타 설정"):
 # ✅ 시그널 체크
 with tab_sig:
     if st.button("📌 오늘 시그널 체크"):
-    df_today = get_data(signal_ticker, start_date, end_date)
-    if not df_today.empty:
-        check_signal_today(
-            df_today,
-            ma_buy=ma_buy, offset_ma_buy=offset_ma_buy,
-            ma_sell=ma_sell, offset_ma_sell=offset_ma_sell,
-            offset_cl_buy=offset_cl_buy, offset_cl_sell=offset_cl_sell,
-            ma_compare_short=ma_compare_short if ma_compare_short > 0 else None,
-            ma_compare_long=ma_compare_long if ma_compare_long > 0 else None,
-            offset_compare_short=offset_compare_short,
-            offset_compare_long=offset_compare_long,
-            buy_operator=buy_operator,
-            sell_operator=sell_operator,
-            use_trend_in_buy=use_trend_in_buy,
-            use_trend_in_sell=use_trend_in_sell
-        )
+        df_today = get_data(signal_ticker, start_date, end_date)
+        
+        if not df_today.empty:
+            check_signal_today(
+                df_today,
+                ma_buy=ma_buy, offset_ma_buy=offset_ma_buy,
+                ma_sell=ma_sell, offset_ma_sell=offset_ma_sell,
+                offset_cl_buy=offset_cl_buy, offset_cl_sell=offset_cl_sell,
+                ma_compare_short=ma_compare_short if ma_compare_short > 0 else None,
+                ma_compare_long=ma_compare_long if ma_compare_long > 0 else None,
+                offset_compare_short=offset_compare_short,
+                offset_compare_long=offset_compare_long,
+                buy_operator=buy_operator,
+                sell_operator=sell_operator,
+                use_trend_in_buy=use_trend_in_buy,
+                use_trend_in_sell=use_trend_in_sell
+            )
 
 #with st.expander("⚡ yfinance 1분봉으로 오늘 시그널 재확인", expanded=False):
 #    st.caption("미국 티커 전용 · 최신 1분봉 종가로 마지막 캔들만 치환하여 판정합니다.")
@@ -2007,4 +2008,5 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
