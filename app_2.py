@@ -358,13 +358,23 @@ def check_signal_today(
     if not (last_buy_date or last_sell_date or last_hold_date):
         st.warning("❗최근 조건에 부합하는 날을 찾지 못했습니다.")
 
+    # 🔎 선택 차트 보기 (종가 + MA)
+    if st.checkbox("📈 차트 보기", value=False):
+        import plotly.graph_objects as go
+        dfc = df.copy()
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=dfc["Date"], y=dfc["Close"], name="Close"))
+        fig.add_trace(go.Scatter(x=dfc["Date"], y=dfc["MA_BUY"], name=f"MA_BUY({ma_buy})", line=dict(dash="dash")))
+        fig.add_trace(go.Scatter(x=dfc["Date"], y=dfc["MA_SELL"], name=f"MA_SELL({ma_sell})", line=dict(dash="dot")))
+        st.plotly_chart(fig, use_container_width=True)
+
+
 ### 오늘의 시그널 (실시간) ###
 
 def check_signal_today_realtime(
     df_daily: pd.DataFrame,
     ticker: str,
     *,
-    # 아래부터는 키워드 인자 
     tz: str = "America/New_York",
     session_start: str = "09:30",
     session_end: str = "16:00",
@@ -495,16 +505,6 @@ PRESETS = {
         "stop_loss_pct": 0.0, "take_profit_pct": 0.0
     },
 
-    "GGLL 전략": {
-        "signal_ticker": "GGLL", "trade_ticker": "GGLL",
-        "offset_cl_buy": 15, "buy_operator": ">", "offset_ma_buy": 15, "ma_buy": 5,
-        "offset_cl_sell": 1, "sell_operator": "<", "offset_ma_sell": 5, "ma_sell": 25,
-        "use_trend_in_buy": True, "use_trend_in_sell": True,
-        "offset_compare_short": 15, "ma_compare_short": 25,
-        "offset_compare_long": 25, "ma_compare_long": 25,         
-        "stop_loss_pct": 0.0, "take_profit_pct": 15.0
-    },
-
     "BITX 전략": {
         "signal_ticker": "BITX", "trade_ticker": "BITX",
         "offset_cl_buy": 15, "buy_operator": ">", "offset_ma_buy": 25, "ma_buy": 5,
@@ -611,8 +611,7 @@ def summarize_signal_today(df, p):
 
     # 추세
     trend_ok = True
-    if p.get("ma_compare_short") and p.get("ma_compare_long") and \
-   ("MA_SHORT" in df.columns) and ("MA_LONG" in df.columns):
+    if p.get("ma_compare_short") and p.get("ma_compare_long") and "MA_SHORT" in df.columns and "MA_LONG" in df.columns:
         try:
             ms = float(df["MA_SHORT"].iloc[i - p["offset_compare_short"]])
             ml = float(df["MA_LONG"].iloc[i - p["offset_compare_long"]])
@@ -646,7 +645,7 @@ def summarize_signal_today(df, p):
             ms = df["MA_SELL"].iloc[j - p["offset_ma_sell"]]
 
             trend_pass = True
-            if p.get("ma_compare_short") and p.get("ma_compare_long") and "MA_SHORT" in df and "MA_LONG" in df:
+            if p.get("ma_compare_short") and p.get("ma_compare_long") and "MA_SHORT" in df.columns and "MA_LONG" in df.columns:
                 ms_short = df["MA_SHORT"].iloc[j - p["offset_compare_short"]]
                 ms_long  = df["MA_LONG"].iloc[j - p["offset_compare_long"]]
                 trend_pass = (ms_short >= ms_long)
@@ -677,6 +676,9 @@ def summarize_signal_today(df, p):
 st.set_page_config(page_title="전략 백테스트", layout="wide")
 st.title("📊 전략 백테스트 웹앱")
 
+
+# === 탭 생성 (UI 정리) ===
+tab_sig, tab_bt, tab_presets = st.tabs(["🔎 오늘 시그널", "📈 백테스트", "🧭 프리셋 요약"])
 st.markdown("모든 매매는 종가 매매이나, 손절,익절은 장중 시가. n일전 데이터 기반으로 금일 종가 매매를 한다.")
 st.markdown("KODEX미국반도체 390390, KODEX200 069500 KDOEX인버스 114800, KODEX미국나스닥100 379810, ACEKRX금현물 411060, KODEX은선물 114800, ACE미국30년국채액티브(H) 453850, ACE미국빅테크TOP7Plus 465580")
 
@@ -761,7 +763,8 @@ with st.expander("⚙️ 체결/비용 & 기타 설정"):
         random.seed(int(seed))
 
 # ✅ 시그널 체크
-if st.button("📌 오늘 시그널 체크"):
+with tab_sig:
+    if st.button("📌 오늘 시그널 체크"):
     df_today = get_data(signal_ticker, start_date, end_date)
     if not df_today.empty:
         check_signal_today(
@@ -781,7 +784,8 @@ if st.button("📌 오늘 시그널 체크"):
 
 #with st.expander("⚡ yfinance 1분봉으로 오늘 시그널 재확인", expanded=False):
 #    st.caption("미국 티커 전용 · 최신 1분봉 종가로 마지막 캔들만 치환하여 판정합니다.")
-if st.button("⚡ 오늘 시그널 체크 (실시간)"):
+with tab_sig:
+    if st.button("⚡ 오늘 시그널 체크 (실시간)"):
     df_today = get_data(signal_ticker, start_date, end_date)
     if df_today.empty:
         st.error("기본 데이터 로딩 실패")
@@ -814,7 +818,8 @@ if st.button("⚡ 오늘 시그널 체크 (실시간)"):
             )
 
 # === 시그널 한번에 보기 UI 버튼 추가 ===
-if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
+with tab_presets:
+    if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
     rows = []
     for name, p in PRESETS.items():
         sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
@@ -829,13 +834,16 @@ if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
             "최근 HOLD": res["last_hold"] or "-",
         })
     st.subheader("🧭 PRESETS 오늘 시그널 요약")
-    st.dataframe(pd.DataFrame(rows))
+    _dfp = pd.DataFrame(rows)
+    _dfp["시그널"] = _dfp["시그널"].map({"BUY":"🟢 BUY","SELL":"🔴 SELL","BUY & SELL":"🟡 BOTH","HOLD":"⚪ HOLD","데이터부족":"⚠️ 부족","데이터없음":"❌ 없음"}).fillna(_dfp["시그널"])
+    st.dataframe(_dfp, hide_index=True)
 
 # === PRESETS 일괄 체크 (미주: yfinance 1분봉 최신가 반영) ===
 #with st.expander("📚 PRESETS 전체 오늘 시그널 보기 · 1분봉 최신가 반영(US)", expanded=False):
 #    st.caption("미국 티커는 yfinance 1분봉의 최신 종가로 '오늘' 캔들을 만들어 판정합니다. (완전 실시간 아님)")
 
-if st.button("📚 PRESETS 전체 오늘 시그널 (실시간)"):
+with tab_presets:
+    if st.button("📚 PRESETS 전체 오늘 시그널 (실시간)"):
     rows = []
     for name, p in PRESETS.items():
         sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
@@ -903,7 +911,7 @@ if st.button("📚 PRESETS 전체 오늘 시그널 (실시간)"):
         })
 
     st.subheader("🧭 PRESETS 오늘 시그널 요약 (1분봉 세션 집계 반영)")
-    st.dataframe(pd.DataFrame(rows))
+    st.dataframe(pd.DataFrame(rows), hide_index=True)
 
 
 ######### 주요 코드 [백테스트] ###########
@@ -1587,7 +1595,8 @@ def run_random_simulations_fast(
 
 
 # ✅ UI 버튼 및 시각화
-if st.button("✅ 백테스트 실행"):
+with tab_bt:
+    if st.button("✅ 백테스트 실행"):
     # 1) 이번 실행에 필요한 MA 윈도우 풀 구성
     ma_pool = [ma_buy, ma_sell]
     if (ma_compare_short or 0) > 0: ma_pool.append(ma_compare_short)
@@ -1998,39 +2007,4 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
