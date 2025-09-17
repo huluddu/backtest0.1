@@ -505,6 +505,16 @@ PRESETS = {
         "stop_loss_pct": 0.0, "take_profit_pct": 0.0
     },
 
+    "GGLL 전략": {
+        "signal_ticker": "GGLL", "trade_ticker": "GGLL",
+        "offset_cl_buy": 15, "buy_operator": ">", "offset_ma_buy": 15, "ma_buy": 5,
+        "offset_cl_sell": 1, "sell_operator": "<", "offset_ma_sell": 5, "ma_sell": 25,
+        "use_trend_in_buy": True, "use_trend_in_sell": True,
+        "offset_compare_short": 15, "ma_compare_short": 25,
+        "offset_compare_long": 25, "ma_compare_long": 25,         
+        "stop_loss_pct": 0.0, "take_profit_pct": 15.0
+    },
+
     "BITX 전략": {
         "signal_ticker": "BITX", "trade_ticker": "BITX",
         "offset_cl_buy": 15, "buy_operator": ">", "offset_ma_buy": 25, "ma_buy": 5,
@@ -584,6 +594,7 @@ PRESETS = {
         "offset_compare_long": 15, "ma_compare_long": 10,         
         "stop_loss_pct": 0.0, "take_profit_pct": 10.0
     },
+
 }
 
 
@@ -1869,6 +1880,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
