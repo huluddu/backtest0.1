@@ -521,7 +521,7 @@ PRESETS = {
         "use_trend_in_buy": True, "use_trend_in_sell": False,
         "offset_compare_short": 1, "ma_compare_short": 15,
         "offset_compare_long": 25, "ma_compare_long": 15,         
-        "stop_loss_pct": 0.0, "take_profit_pct": 30.0
+        "stop_loss_pct": 0.0, "take_profit_pct": 10.0
     },
       
     "SOXS를 SOXL 보고 사기 전략": {
@@ -1986,6 +1986,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
