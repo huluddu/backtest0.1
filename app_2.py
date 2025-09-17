@@ -358,23 +358,13 @@ def check_signal_today(
     if not (last_buy_date or last_sell_date or last_hold_date):
         st.warning("❗최근 조건에 부합하는 날을 찾지 못했습니다.")
 
-    # 🔎 선택 차트 보기 (종가 + MA)
-    if st.checkbox("📈 차트 보기", value=False):
-        import plotly.graph_objects as go
-        dfc = df.copy()
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=dfc["Date"], y=dfc["Close"], name="Close"))
-        fig.add_trace(go.Scatter(x=dfc["Date"], y=dfc["MA_BUY"], name=f"MA_BUY({ma_buy})", line=dict(dash="dash")))
-        fig.add_trace(go.Scatter(x=dfc["Date"], y=dfc["MA_SELL"], name=f"MA_SELL({ma_sell})", line=dict(dash="dot")))
-        st.plotly_chart(fig, use_container_width=True)
-
-
 ### 오늘의 시그널 (실시간) ###
 
 def check_signal_today_realtime(
     df_daily: pd.DataFrame,
     ticker: str,
     *,
+    # 아래부터는 키워드 인자 
     tz: str = "America/New_York",
     session_start: str = "09:30",
     session_end: str = "16:00",
@@ -594,7 +584,6 @@ PRESETS = {
         "offset_compare_long": 15, "ma_compare_long": 10,         
         "stop_loss_pct": 0.0, "take_profit_pct": 10.0
     },
-
 }
 
 
@@ -622,7 +611,8 @@ def summarize_signal_today(df, p):
 
     # 추세
     trend_ok = True
-    if p.get("ma_compare_short") and p.get("ma_compare_long") and "MA_SHORT" in df.columns and "MA_LONG" in df.columns:
+    if p.get("ma_compare_short") and p.get("ma_compare_long") and \
+   ("MA_SHORT" in df.columns) and ("MA_LONG" in df.columns):
         try:
             ms = float(df["MA_SHORT"].iloc[i - p["offset_compare_short"]])
             ml = float(df["MA_LONG"].iloc[i - p["offset_compare_long"]])
@@ -656,7 +646,7 @@ def summarize_signal_today(df, p):
             ms = df["MA_SELL"].iloc[j - p["offset_ma_sell"]]
 
             trend_pass = True
-            if p.get("ma_compare_short") and p.get("ma_compare_long") and "MA_SHORT" in df.columns and "MA_LONG" in df.columns:
+            if p.get("ma_compare_short") and p.get("ma_compare_long") and "MA_SHORT" in df and "MA_LONG" in df:
                 ms_short = df["MA_SHORT"].iloc[j - p["offset_compare_short"]]
                 ms_long  = df["MA_LONG"].iloc[j - p["offset_compare_long"]]
                 trend_pass = (ms_short >= ms_long)
@@ -687,9 +677,6 @@ def summarize_signal_today(df, p):
 st.set_page_config(page_title="전략 백테스트", layout="wide")
 st.title("📊 전략 백테스트 웹앱")
 
-
-# === 탭 생성 (UI 정리) ===
-tab_sig, tab_bt, tab_presets = st.tabs(["🔎 오늘 시그널", "📈 백테스트", "🧭 프리셋 요약"])
 st.markdown("모든 매매는 종가 매매이나, 손절,익절은 장중 시가. n일전 데이터 기반으로 금일 종가 매매를 한다.")
 st.markdown("KODEX미국반도체 390390, KODEX200 069500 KDOEX인버스 114800, KODEX미국나스닥100 379810, ACEKRX금현물 411060, KODEX은선물 114800, ACE미국30년국채액티브(H) 453850, ACE미국빅테크TOP7Plus 465580")
 
@@ -774,110 +761,97 @@ with st.expander("⚙️ 체결/비용 & 기타 설정"):
         random.seed(int(seed))
 
 # ✅ 시그널 체크
-with tab_sig:
-    if st.button("📌 오늘 시그널 체크"):
-        df_today = get_data(signal_ticker, start_date, end_date)
-        
-        if not df_today.empty:
+if st.button("📌 오늘 시그널 체크"):
+    df_today = get_data(signal_ticker, start_date, end_date)
+    if not df_today.empty:
+        check_signal_today(
+            df_today,
+            ma_buy=ma_buy, offset_ma_buy=offset_ma_buy,
+            ma_sell=ma_sell, offset_ma_sell=offset_ma_sell,
+            offset_cl_buy=offset_cl_buy, offset_cl_sell=offset_cl_sell,
+            ma_compare_short=ma_compare_short if ma_compare_short > 0 else None,
+            ma_compare_long=ma_compare_long if ma_compare_long > 0 else None,
+            offset_compare_short=offset_compare_short,
+            offset_compare_long=offset_compare_long,
+            buy_operator=buy_operator,
+            sell_operator=sell_operator,
+            use_trend_in_buy=use_trend_in_buy,
+            use_trend_in_sell=use_trend_in_sell
+        )
+
+#with st.expander("⚡ yfinance 1분봉으로 오늘 시그널 재확인", expanded=False):
+#    st.caption("미국 티커 전용 · 최신 1분봉 종가로 마지막 캔들만 치환하여 판정합니다.")
+if st.button("⚡ 오늘 시그널 체크 (실시간)"):
+    df_today = get_data(signal_ticker, start_date, end_date)
+    if df_today.empty:
+        st.error("기본 데이터 로딩 실패")
+    else:
+        is_krx = (signal_ticker.isdigit() or signal_ticker.lower().endswith(".ks"))
+        if is_krx:
+            st.warning("국내 티커는 일봉 데이터로 판정합니다.")
             check_signal_today(
                 df_today,
                 ma_buy=ma_buy, offset_ma_buy=offset_ma_buy,
                 ma_sell=ma_sell, offset_ma_sell=offset_ma_sell,
                 offset_cl_buy=offset_cl_buy, offset_cl_sell=offset_cl_sell,
-                ma_compare_short=ma_compare_short if ma_compare_short > 0 else None,
-                ma_compare_long=ma_compare_long if ma_compare_long > 0 else None,
-                offset_compare_short=offset_compare_short,
-                offset_compare_long=offset_compare_long,
-                buy_operator=buy_operator,
-                sell_operator=sell_operator,
-                use_trend_in_buy=use_trend_in_buy,
-                use_trend_in_sell=use_trend_in_sell
+                ma_compare_short=ma_compare_short if (ma_compare_short or 0) > 0 else None,
+                ma_compare_long=ma_compare_long  if (ma_compare_long  or 0) > 0 else None,
+                offset_compare_short=offset_compare_short, offset_compare_long=offset_compare_long,
+                buy_operator=buy_operator, sell_operator=sell_operator,
+                use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
+            )
+        else:
+            check_signal_today_realtime(
+                df_today, signal_ticker,
+                tz="America/New_York", session_start="09:30", session_end="16:00",
+                ma_buy=ma_buy, offset_ma_buy=offset_ma_buy,
+                ma_sell=ma_sell, offset_ma_sell=offset_ma_sell,
+                offset_cl_buy=offset_cl_buy, offset_cl_sell=offset_cl_sell,
+                ma_compare_short=ma_compare_short, ma_compare_long=ma_compare_long,
+                offset_compare_short=offset_compare_short, offset_compare_long=offset_compare_long,
+                buy_operator=buy_operator, sell_operator=sell_operator,
+                use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
             )
 
-#with st.expander("⚡ yfinance 1분봉으로 오늘 시그널 재확인", expanded=False):
-#    st.caption("미국 티커 전용 · 최신 1분봉 종가로 마지막 캔들만 치환하여 판정합니다.")
-with tab_sig:
-    if st.button("⚡ 오늘 시그널 체크 (실시간)"):
-        df_today = get_data(signal_ticker, start_date, end_date)
-        if df_today.empty:
-            st.error("기본 데이터 로딩 실패")
-        else:
-            is_krx = (signal_ticker.isdigit() or signal_ticker.lower().endswith(".ks"))
-            if is_krx:
-                st.warning("국내 티커는 일봉 데이터로 판정합니다.")
-                check_signal_today(
-                    df_today,
-                    ma_buy=ma_buy, offset_ma_buy=offset_ma_buy,
-                    ma_sell=ma_sell, offset_ma_sell=offset_ma_sell,
-                    offset_cl_buy=offset_cl_buy, offset_cl_sell=offset_cl_sell,
-                    ma_compare_short=ma_compare_short if (ma_compare_short or 0) > 0 else None,
-                    ma_compare_long=ma_compare_long  if (ma_compare_long  or 0) > 0 else None,
-                    offset_compare_short=offset_compare_short, offset_compare_long=offset_compare_long,
-                    buy_operator=buy_operator, sell_operator=sell_operator,
-                    use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
-                )
-            else:
-                check_signal_today_realtime(
-                    df_today, signal_ticker,
-                    tz="America/New_York", session_start="09:30", session_end="16:00",
-                    ma_buy=ma_buy, offset_ma_buy=offset_ma_buy,
-                    ma_sell=ma_sell, offset_ma_sell=offset_ma_sell,
-                    offset_cl_buy=offset_cl_buy, offset_cl_sell=offset_cl_sell,
-                    ma_compare_short=ma_compare_short, ma_compare_long=ma_compare_long,
-                    offset_compare_short=offset_compare_short, offset_compare_long=offset_compare_long,
-                    buy_operator=buy_operator, sell_operator=sell_operator,
-                    use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
-                )
-
 # === 시그널 한번에 보기 UI 버튼 추가 ===
-with tab_presets:
-    if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
-        rows = []
-        for name, p in PRESETS.items():
-            sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
-            df = get_data(sig_tic, start_date, end_date)
-            res = summarize_signal_today(df, p)
-            rows.append({
-                "전략명": name,
-                "티커": sig_tic,
-                "시그널": res["label"],
-                "최근 BUY": res["last_buy"] or "-",
-                "최근 SELL": res["last_sell"] or "-",
-                "최근 HOLD": res["last_hold"] or "-",
-            })
+if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
+    rows = []
+    for name, p in PRESETS.items():
+        sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
+        df = get_data(sig_tic, start_date, end_date)
+        res = summarize_signal_today(df, p)
+        rows.append({
+            "전략명": name,
+            "티커": sig_tic,
+            "시그널": res["label"],
+            "최근 BUY": res["last_buy"] or "-",
+            "최근 SELL": res["last_sell"] or "-",
+            "최근 HOLD": res["last_hold"] or "-",
+        })
+    st.subheader("🧭 PRESETS 오늘 시그널 요약")
+    st.dataframe(pd.DataFrame(rows))
 
-        st.subheader("🧭 PRESETS 오늘 시그널 요약")
-        _dfp = pd.DataFrame(rows)
-        _dfp["시그널"] = _dfp["시그널"].map({
-            "BUY": "🟢 BUY",
-            "SELL": "🔴 SELL",
-            "BUY & SELL": "🟡 BOTH",
-            "HOLD": "⚪ HOLD",
-            "데이터부족": "⚠️ 부족",
-            "데이터없음": "❌ 없음"
-        }).fillna(_dfp["시그널"])
-        st.dataframe(_dfp, hide_index=True)
 # === PRESETS 일괄 체크 (미주: yfinance 1분봉 최신가 반영) ===
-# with st.expander("📚 PRESETS 전체 오늘 시그널 보기 · 1분봉 최신가 반영(US)", expanded=False):
-#     st.caption("미국 티커는 yfinance 1분봉의 최신 종가로 '오늘' 캔들을 만들어 판정합니다. (완전 실시간 아님)")
+#with st.expander("📚 PRESETS 전체 오늘 시그널 보기 · 1분봉 최신가 반영(US)", expanded=False):
+#    st.caption("미국 티커는 yfinance 1분봉의 최신 종가로 '오늘' 캔들을 만들어 판정합니다. (완전 실시간 아님)")
 
-with tab_presets:
-    if st.button("📚 PRESETS 전체 오늘 시그널 (실시간)"):
-        rows = []
-        for name, p in PRESETS.items():
-            sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
-            tz = "America/New_York"
-            session_start, session_end = "09:30", "16:00"      
+if st.button("📚 PRESETS 전체 오늘 시그널 (실시간)"):
+    rows = []
+    for name, p in PRESETS.items():
+        sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
+        tz = "America/New_York"
+        session_start, session_end = "09:30", "16:00"
 
-            # 1) 기본(일봉) 데이터
-            df0 = get_data(sig_tic, start_date, end_date)
-            src = "EOD"
-            if not df0.empty:
-                df_rt = (
-                    df0.sort_values("Date")
-                      .drop_duplicates(subset=["Date"])
-                      .reset_index(drop=True)
-                )            
+        # 1) 기본(일봉) 데이터
+        df0 = get_data(sig_tic, start_date, end_date)
+        src = "EOD"
+
+        if not df0.empty:
+            df_rt = (
+                df0.sort_values("Date")
+                   .drop_duplicates(subset=["Date"])
+                   .reset_index(drop=True)
+            )
 
             # 2) 미주 티커면 1분봉 → 세션 집계로 '오늘/최근' 반영
             if not (sig_tic.isdigit() or sig_tic.lower().endswith(".ks")):
@@ -903,33 +877,34 @@ with tab_presets:
                     df_rt = df_rt.drop(columns=["Date_only"])
                     src = "yfinance_1m_grouped"
             # KRX/숫자티커는 EOD 유지
-            else:
-                df_rt = df0  # empty
+        else:
+            df_rt = df0  # empty
 
-            # 3) '오늘 기준' 오프셋 0으로 판정
-            if not df_rt.empty:
-                p_rt = dict(p)
-                p_rt.update({
-                    "offset_cl_buy": 0, "offset_ma_buy": 0,
-                    "offset_cl_sell": 0, "offset_ma_sell": 0,
-                    "offset_compare_short": 0, "offset_compare_long": 0,
-                })
-                res = summarize_signal_today(df_rt, p_rt)
-            else:
-                res = {"label": "데이터없음", "last_buy": None, "last_sell": None, "last_hold": None}
-
-            rows.append({
-                "전략명": name,
-                "티커": sig_tic,
-                "시그널": res["label"],
-                "최근 BUY":  res["last_buy"]  or "-",
-                "최근 SELL": res["last_sell"] or "-",
-                "최근 HOLD": res["last_hold"] or "-",
-                "가격소스": src,
+        # 3) '오늘 기준' 오프셋 0으로 판정
+        if not df_rt.empty:
+            p_rt = dict(p)
+            p_rt.update({
+                "offset_cl_buy": 0, "offset_ma_buy": 0,
+                "offset_cl_sell": 0, "offset_ma_sell": 0,
+                "offset_compare_short": 0, "offset_compare_long": 0,
             })
+            res = summarize_signal_today(df_rt, p_rt)
+        else:
+            res = {"label": "데이터없음", "last_buy": None, "last_sell": None, "last_hold": None}
 
-        st.subheader("🧭 PRESETS 오늘 시그널 요약 (1분봉 세션 집계 반영)")
-        st.dataframe(pd.DataFrame(rows), hide_index=True)
+        rows.append({
+            "전략명": name,
+            "티커": sig_tic,
+            "시그널": res["label"],
+            "최근 BUY":  res["last_buy"]  or "-",
+            "최근 SELL": res["last_sell"] or "-",
+            "최근 HOLD": res["last_hold"] or "-",
+            "가격소스": src,
+        })
+
+    st.subheader("🧭 PRESETS 오늘 시그널 요약 (1분봉 세션 집계 반영)")
+    st.dataframe(pd.DataFrame(rows))
+
 
 ######### 주요 코드 [백테스트] ###########
 # ===== Fast Backtest =====
@@ -1610,100 +1585,243 @@ def run_random_simulations_fast(
         })
     return pd.DataFrame(results)
 
+
 # ✅ UI 버튼 및 시각화
-with tab_bt:
-    if st.button("✅ 백테스트 실행"):
-        # 1) 이번 실행에 필요한 MA 윈도우 풀 구성
-        ma_pool = [ma_buy, ma_sell]
-        if (ma_compare_short or 0) > 0:
-            ma_pool.append(ma_compare_short)
-        if (ma_compare_long or 0) > 0:
-            ma_pool.append(ma_compare_long)
+if st.button("✅ 백테스트 실행"):
+    # 1) 이번 실행에 필요한 MA 윈도우 풀 구성
+    ma_pool = [ma_buy, ma_sell]
+    if (ma_compare_short or 0) > 0: ma_pool.append(ma_compare_short)
+    if (ma_compare_long  or 0) > 0: ma_pool.append(ma_compare_long)
 
-        # 2) 기준 DF + MA 사전계산
-        base, x_sig, x_trd, ma_dict_sig = prepare_base(
-            signal_ticker, trade_ticker, start_date, end_date, ma_pool
-        )
+    # 2) 기준 DF + MA 사전계산
+    base, x_sig, x_trd, ma_dict_sig = prepare_base(
+        signal_ticker, trade_ticker, start_date, end_date, ma_pool
+    )
 
-        # 3) 백테스트 실행
-        result = backtest_fast(
-            base, x_sig, x_trd, ma_dict_sig,
-            ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
-            offset_cl_buy, offset_cl_sell,
-            ma_compare_short if (ma_compare_short or 0) > 0 else None,
-            ma_compare_long if (ma_compare_long or 0) > 0 else None,
-            offset_compare_short, offset_compare_long,
-            initial_cash=initial_cash_ui,
-            stop_loss_pct=stop_loss_pct, take_profit_pct=take_profit_pct,
-            min_hold_days=min_hold_days,
-            strategy_behavior=strategy_behavior,
-            fee_bps=fee_bps, slip_bps=slip_bps,
-            use_trend_in_buy=use_trend_in_buy,
-            use_trend_in_sell=use_trend_in_sell,
-            buy_operator=buy_operator,
-            sell_operator=sell_operator,
-            execution_lag_days=1,                # ✅ 다음 거래일 체결
-            execution_price_mode="next_close"    # ✅ 다음날 종가 체결
-        )
+    # 3) 백테스트 실행
+    result = backtest_fast(
+        base, x_sig, x_trd, ma_dict_sig,
+        ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
+        offset_cl_buy, offset_cl_sell,
+        ma_compare_short if (ma_compare_short or 0) > 0 else None,
+        ma_compare_long  if (ma_compare_long  or 0) > 0 else None,
+        offset_compare_short, offset_compare_long,
+        initial_cash=initial_cash_ui,
+        stop_loss_pct=stop_loss_pct, take_profit_pct=take_profit_pct,
+        min_hold_days=min_hold_days,
+        strategy_behavior=strategy_behavior,
+        fee_bps=fee_bps, slip_bps=slip_bps,
+        use_trend_in_buy=use_trend_in_buy,
+        use_trend_in_sell=use_trend_in_sell,
+        buy_operator=buy_operator,
+        sell_operator=sell_operator,
+        execution_lag_days=1,                # ✅ 다음 거래일 체결
+        execution_price_mode="next_close"     # ✅ 다음날 시가로 체결 (원하면 "next_close")
+    )
 
-        if result:
-            st.subheader("📊 백테스트 결과 요약")
-            summary = {k: v for k, v in result.items() if k != "매매 로그"}
-            st.json(summary)
-            colA, colB, colC, colD = st.columns(4)
-            colA.metric("총 수익률", f"{summary.get('수익률 (%)', 0)}%")
-            colB.metric("승률", f"{summary.get('승률 (%)', 0)}%")
-            colC.metric("총 매매 횟수", summary.get("총 매매 횟수", 0))
-            colD.metric("MDD", f"{summary.get('MDD (%)', 0)}%")
 
-            df_log = pd.DataFrame(result["매매 로그"])
-            df_log["날짜"] = pd.to_datetime(df_log["날짜"])
-            df_log.set_index("날짜", inplace=True)
+    if result:
+        st.subheader("📊 백테스트 결과 요약")
+        summary = {k: v for k, v in result.items() if k != "매매 로그"}
+        st.json(summary)
+        colA, colB, colC, colD = st.columns(4)
+        colA.metric("총 수익률", f"{summary.get('수익률 (%)', 0)}%")
+        colB.metric("승률", f"{summary.get('승률 (%)', 0)}%")      # 👈 승률 강조
+        colC.metric("총 매매 횟수", summary.get("총 매매 횟수", 0))
+        colD.metric("MDD", f"{summary.get('MDD (%)', 0)}%")
 
-            # ===== 성과지표 보강 =====
-            eq = df_log["자산"].pct_change().dropna()
-            if not eq.empty:
-                ann_ret = (1 + eq.mean()) ** 252 - 1
-                ann_vol = eq.std() * (252 ** 0.5)
-                sharpe = (ann_ret / ann_vol) if ann_vol > 0 else 0.0
-            else:
-                ann_ret = ann_vol = sharpe = 0.0
+        df_log = pd.DataFrame(result["매매 로그"])
+        df_log["날짜"] = pd.to_datetime(df_log["날짜"])
+        df_log.set_index("날짜", inplace=True)
 
-            st.write({
-                "연율화 수익률 CAGR(%)": round(ann_ret * 100, 2),
-                "평균 거래당 수익률(%)": result.get("평균 거래당 수익률 (%)", 0.0),
-                "ProfitFactor": result.get("Profit Factor", 0.0),
-                "연율화 변동성(%)": round(ann_vol * 100, 2),
-                "샤프": round(sharpe, 2),
-            })
+        # ===== 성과지표 보강 (연율화/샤프/벤치마크)
+        eq = df_log["자산"].pct_change().dropna()
+        if not eq.empty:
+            ann_ret = (1 + eq.mean()) ** 252 - 1
+            ann_vol = eq.std() * (252 ** 0.5)
+            sharpe = (ann_ret / ann_vol) if ann_vol > 0 else 0.0
+        else:
+            ann_ret = ann_vol = sharpe = 0.0
 
-            # ===== 그래프 =====
-            fig = go.Figure()
-            # 벤치마크
-            bench = initial_cash_ui * (df_log["종가"] / df_log["종가"].iloc[0])
-            bh_ret = round((bench.iloc[-1] - initial_cash_ui) / initial_cash_ui * 100, 2)
+        st.write({
+            "연율화 수익률 CAGR(%)": round(ann_ret * 100, 2),
+            "평균 거래당 수익률(%)": result.get("평균 거래당 수익률 (%)", 0.0),
+            "ProfitFactor": result.get("Profit Factor", 0.0),
+            "연율화 변동성(%)": round(ann_vol * 100, 2),
+            "샤프": round(sharpe, 2),
+        })
 
-            fig.add_trace(go.Scatter(
-                x=df_log.index, y=bench, mode="lines", name="Benchmark",
-                yaxis="y1", line=dict(dash="dot")
-            ))
-            # 자산 곡선
-            fig.add_trace(go.Scatter(
-                x=df_log.index, y=df_log["자산"], mode="lines", name="Asset", yaxis="y1"
-            ))
+        # ===== 그래프 그리기 =====
+        fig = go.Figure()
 
-            # (중략 — 나머지 그래프/마커/요약 부분도 전부 12칸 → 8칸 들여쓰기로 동일하게 맞추면 됩니다.)
+        # 벤치마크 (Buy&Hold)
+        bench = initial_cash_ui * (df_log["종가"] / df_log["종가"].iloc[0])
+        bh_ret = round((bench.iloc[-1] - initial_cash_ui) / initial_cash_ui * 100, 2)
 
-            # 다운로드 버튼
-            with st.expander("🧾 매매 로그"):
-                st.dataframe(df_log)
-            csv = df_log.reset_index().to_csv(index=False).encode("utf-8-sig")
-            st.download_button(
-                "⬇️ 백테스트 결과 다운로드 (CSV)",
-                data=csv,
-                file_name="backtest_result.csv",
-                mime="text/csv"
+        fig.add_trace(go.Scatter(
+            x=df_log.index,
+            y=bench,
+            mode="lines",
+            name="Benchmark",
+            yaxis="y1",
+            line=dict(dash="dot")
+        ))
+
+        # 자산 곡선 (왼쪽 y축)
+        fig.add_trace(go.Scatter(
+            x=df_log.index,
+            y=df_log["자산"],
+            mode="lines",
+            name="Asset",
+            yaxis="y1"
+        ))
+
+        # 보유 구간 배경 음영
+        pos_step = df_log["신호"].map({"BUY": 1, "SELL": -1}).fillna(0).cumsum()
+        in_pos = pos_step > 0
+        pos_asset = df_log["자산"].where(in_pos)
+        fig.add_trace(go.Scatter(
+            x=df_log.index,
+            y=pos_asset,
+            mode="lines",
+            name="In-Position",
+            yaxis="y1",
+            line=dict(width=0),
+            fill="tozeroy",
+            fillcolor="rgba(0,150,0,0.08)",
+            hoverinfo="skip",
+            showlegend=False
+        ))
+
+        # 종가 (오른쪽 y축)
+        fig.add_trace(go.Scatter(
+            x=df_log.index,
+            y=df_log["종가"],
+            mode="lines",
+            name="Price",
+            yaxis="y2"
+        ))
+
+        # 매수/매도 시점 필터
+        buy_points = df_log[df_log["신호"] == "BUY"]
+        sell_points = df_log[df_log["신호"] == "SELL"]
+
+        # 동시 만족 필터
+        both_buy = buy_points[buy_points["양시그널"] == True]
+        both_sell = sell_points[sell_points["양시그널"] == True]
+
+        # 일반 BUY 마커
+        fig.add_trace(go.Scatter(
+            x=buy_points.index,
+            y=buy_points["종가"],
+            mode="markers",
+            name="BUY",
+            yaxis="y2",
+            marker=dict(
+                color="green",
+                size=6,
+                symbol="triangle-up"
             )
+        ))
+
+        # 일반 SELL 마커
+        fig.add_trace(go.Scatter(
+            x=sell_points.index,
+            y=sell_points["종가"],
+            mode="markers",
+            name="SELL",
+            yaxis="y2",
+            marker=dict(
+                color="red",
+                size=6,
+                symbol="triangle-down"
+            )
+        ))
+
+        # 동시 BUY 마커 (노란 테두리)
+        fig.add_trace(go.Scatter(
+            x=both_buy.index,
+            y=both_buy["종가"],
+            mode="markers",
+            name="BUY (양시그널)",
+            yaxis="y2",
+            marker=dict(
+                color="green",
+                size=9,
+                symbol="triangle-up",
+                line=dict(color="yellow", width=2)
+            )
+        ))
+
+        # 동시 SELL 마커 (노란 테두리)
+        fig.add_trace(go.Scatter(
+            x=both_sell.index,
+            y=both_sell["종가"],
+            mode="markers",
+            name="SELL (양시그널)",
+            yaxis="y2",
+            marker=dict(
+                color="red",
+                size=9,
+                symbol="triangle-down",
+                line=dict(color="yellow", width=2)
+            )
+        ))
+
+        # 손절/익절 마커 (자산 축)
+        sl = df_log[df_log["손절발동"] == True]
+        tp = df_log[df_log["익절발동"] == True]
+        if not sl.empty:
+            fig.add_trace(go.Scatter(
+                x=sl.index, y=sl["자산"], mode="markers", name="손절",
+                yaxis="y1", marker=dict(symbol="x", size=9)
+            ))
+        if not tp.empty:
+            fig.add_trace(go.Scatter(
+                x=tp.index, y=tp["자산"], mode="markers", name="익절",
+                yaxis="y1", marker=dict(symbol="star", size=10)
+            ))
+
+        # 레이아웃 설정
+        fig.update_layout(
+            title=f"📈 자산 & 종가 흐름 (BUY/SELL 시점 포함) — 벤치마크 수익률 {bh_ret}%",
+            yaxis=dict(title="Asset"),
+            yaxis2=dict(title="Price", overlaying="y", side="right"),
+            hovermode="x unified",
+            height=800
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ===== 트레이드 페어 요약 =====
+        pairs, buy_cache = [], None
+        for _, r in df_log.reset_index().iterrows():
+            if r["신호"] == "BUY":
+                buy_cache = r
+            elif r["신호"] == "SELL" and buy_cache is not None:
+                pb = buy_cache["체결가"] if pd.notna(buy_cache.get("체결가")) else buy_cache["종가"]
+                ps = r["체결가"] if pd.notna(r.get("체결가")) else r["종가"]
+                pnl = (ps - pb) / pb * 100
+                pairs.append({
+                    "진입일": buy_cache["날짜"],
+                    "청산일": r["날짜"],
+                    "진입가(체결가)": round(pb, 4),
+                    "청산가(체결가)": round(ps, 4),
+                    "보유일": r["보유일"],
+                    "수익률(%)": round(pnl, 2),
+                    "청산이유": "손절" if r["손절발동"] else ("익절" if r["익절발동"] else "규칙매도")
+                })
+                buy_cache = None
+
+        if pairs:
+            st.subheader("🧾 트레이드 요약 (체결가 기준)")
+            st.dataframe(pd.DataFrame(pairs))
+
+        # 다운로드 버튼 (로그)
+        with st.expander("🧾 매매 로그"):
+            st.dataframe(df_log)
+        csv = df_log.reset_index().to_csv(index=False).encode("utf-8-sig")
+        st.download_button("⬇️ 백테스트 결과 다운로드 (CSV)", data=csv, file_name="backtest_result.csv", mime="text/csv")
 
 # --- 랜덤 시뮬 후보 입력 (간단 파서 포함) ---
 import re
@@ -1880,8 +1998,6 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
-
-
 
 
 
