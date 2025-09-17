@@ -364,6 +364,7 @@ def check_signal_today_realtime(
     df_daily: pd.DataFrame,
     ticker: str,
     *,
+    # 아래부터는 키워드 인자 
     tz: str = "America/New_York",
     session_start: str = "09:30",
     session_end: str = "16:00",
@@ -610,7 +611,8 @@ def summarize_signal_today(df, p):
 
     # 추세
     trend_ok = True
-    if p.get("ma_compare_short") and p.get("ma_compare_long") and "MA_SHORT" in df and "MA_LONG" in df:
+    if p.get("ma_compare_short") and p.get("ma_compare_long") and \
+   ("MA_SHORT" in df.columns) and ("MA_LONG" in df.columns):
         try:
             ms = float(df["MA_SHORT"].iloc[i - p["offset_compare_short"]])
             ml = float(df["MA_LONG"].iloc[i - p["offset_compare_long"]])
@@ -1996,6 +1998,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
