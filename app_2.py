@@ -526,14 +526,14 @@ PRESETS = {
         "stop_loss_pct": 0.0, "take_profit_pct": 10.0
     },
 
-    "SOXS를 SOXL 보고 사기 전략": {
-        "signal_ticker": "SOXL", "trade_ticker": "SOXS",
+    "SOXS 전략": {
+        "signal_ticker": "SOXS", "trade_ticker": "SOXS",
         "offset_cl_buy": 5, "buy_operator": ">", "offset_ma_buy": 25, "ma_buy": 15,
-        "offset_cl_sell": 1, "sell_operator": "<", "offset_ma_sell": 5, "ma_sell": 10, 
+        "offset_cl_sell": 5, "sell_operator": ">", "offset_ma_sell": 5, "ma_sell": 10, 
         "use_trend_in_buy": True, "use_trend_in_sell": False,
         "offset_compare_short": 15, "ma_compare_short": 25,
         "offset_compare_long": 5, "ma_compare_long": 15,
-        "stop_loss_pct": 0.0, "take_profit_pct": 6.0
+        "stop_loss_pct": 0.0, "take_profit_pct": 0.0
     },
 
     "SLV 전략": {
@@ -2019,6 +2019,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
