@@ -423,6 +423,20 @@ def check_signal_today_realtime(
         df_rt = df_rt.drop(columns=["__date"], errors="ignore")
 
     # 5) 오프셋은 '유지'하여 기존 일봉 판정 함수 호출
+     kw = dict(
+        ma_buy=ma_buy, offset_ma_buy=offset_ma_buy,
+        ma_sell=ma_sell, offset_ma_sell=offset_ma_sell,
+        offset_cl_buy=offset_cl_buy, offset_cl_sell=offset_cl_sell,
+        ma_compare_short=ma_compare_short if (ma_compare_short or 0) > 0 else None,
+        ma_compare_long=ma_compare_long  if (ma_compare_long  or 0) > 0 else None,
+        offset_compare_short=offset_compare_short, offset_compare_long=offset_compare_long,
+        buy_operator=buy_operator, sell_operator=sell_operator,
+        use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
+    )
+    if force_today_offsets:
+        for k in ["offset_ma_buy","offset_ma_sell","offset_cl_buy","offset_cl_sell",
+                  "offset_compare_short","offset_compare_long"]:
+            kw[k] = 0
     check_signal_today(
         df_rt,
         ma_buy=ma_buy, offset_ma_buy=offset_ma_buy,
@@ -645,7 +659,7 @@ def summarize_signal_today(df, p):
             ms = df["MA_SELL"].iloc[j - p["offset_ma_sell"]]
 
             trend_pass = True
-            if p.get("ma_compare_short") and p.get("ma_compare_long") and "MA_SHORT" in df and "MA_LONG" in df.columns:
+            if p.get("ma_compare_short") and p.get("ma_compare_long") and "MA_SHORT" in df.columns and "MA_LONG" in df.columns:
                 ms_short = df["MA_SHORT"].iloc[j - p["offset_compare_short"]]
                 ms_long  = df["MA_LONG"].iloc[j - p["offset_compare_long"]]
                 trend_pass = (ms_short >= ms_long)
@@ -1995,6 +2009,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
