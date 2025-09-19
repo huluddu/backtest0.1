@@ -256,7 +256,7 @@ def check_signal_today(
         df["MA_SHORT"] = df["Close"].rolling(ma_compare_short).mean()
         df["MA_LONG"] = df["Close"].rolling(ma_compare_long).mean()
 
-    i = -1
+    i = 0
     try:
         cl_b = float(df["Close"].iloc[i - offset_cl_buy])
         ma_b = float(df["MA_BUY"].iloc[i - offset_ma_buy])
@@ -609,7 +609,7 @@ def summarize_signal_today(df, p, *, force_today_offsets=False):
         df["MA_SHORT"] = df["Close"].rolling(int(p["ma_compare_short"])).mean()
         df["MA_LONG"]  = df["Close"].rolling(int(p["ma_compare_long"])).mean()
 
-    i = -1
+    i = 0
     try:
         cl_b = float(df["Close"].iloc[i - p["offset_cl_buy"]])
         ma_b = float(df["MA_BUY"].iloc[i - p["offset_ma_buy"]])
@@ -2019,6 +2019,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
