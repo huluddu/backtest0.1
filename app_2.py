@@ -866,27 +866,42 @@ if st.button("📚 PRESETS 전체 오늘 시그널 (실시간)"):
                 daily_close_1m, last_px, last_ts = get_yf_1m_grouped_close(
                     sig_tic, tz=tz, session_start=session_start, session_end=session_end
                 )
-                if not daily_close_1m.empty and last_px is not None:
-                    # df_rt를 날짜(date) 기준으로 매핑
+                if not daily_close_1m.empty and last_ts is not None:
+                    # ✅ 오늘 세션 날짜만 1분봉 집계 종가로 패치 (과거는 EOD 유지)
                     df_rt["Date"] = pd.to_datetime(df_rt["Date"])
                     df_rt["Date_only"] = df_rt["Date"].dt.date
 
-                    for sess_date, sess_close in daily_close_1m.items():
-                        if (df_rt["Date_only"] == sess_date).any():
-                            df_rt.loc[df_rt["Date_only"] == sess_date, "Close"] = float(sess_close)
+                    # 오늘 세션 날짜 계산
+                    ts = pd.Timestamp(last_ts)
+                    if ts.tz is None:
+                        ts = ts.tz_localize("UTC").tz_convert(tz)
+                    else:
+                        ts = ts.tz_convert(tz)
+                    today_sess_date = ts.date()
+
+                    # 오늘 종가만 교체(없으면 오늘 행 추가)
+                    today_close = daily_close_1m.get(today_sess_date, np.nan)
+                    if pd.notna(today_close):
+                        if (df_rt["Date_only"] == today_sess_date).any():
+                            df_rt.loc[df_rt["Date_only"] == today_sess_date, "Close"] = float(today_close)
                         else:
                             df_rt = pd.concat([df_rt, pd.DataFrame([{
-                                "Date": pd.Timestamp(sess_date),
-                                "Date_only": sess_date,
-                                "Close": float(sess_close)
+                                "Date": pd.Timestamp(today_sess_date),
+                                "Date_only": today_sess_date,
+                                "Close": float(today_close)
                             }])], ignore_index=True)
 
-                    df_rt = df_rt.sort_values("Date").drop_duplicates(subset=["Date"]).reset_index(drop=True)
-                    df_rt = df_rt.drop(columns=["Date_only"])
+                    df_rt = (
+                        df_rt.sort_values("Date")
+                             .drop_duplicates(subset=["Date"])
+                             .drop(columns=["Date_only"], errors="ignore")
+                             .reset_index(drop=True)
+                    )
                     src = "yfinance_1m_grouped"
-            # KRX/숫자티커는 EOD 유지
-        else:
-            df_rt = df0  # empty
+                    # KRX/숫자티커는 EOD 유지
+            else:
+                df_rt = df0  # empty
+
 
         # 3) '오늘 기준' 오프셋 0으로 판정
         if not df_rt.empty:
@@ -2004,6 +2019,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
