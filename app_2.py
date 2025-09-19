@@ -526,16 +526,6 @@ PRESETS = {
         "stop_loss_pct": 0.0, "take_profit_pct": 10.0
     },
 
-    "453850 ACE 미국30년국채 전략": {
-        "signal_ticker": "453850", "trade_ticker": "453850",
-        "offset_cl_buy": 15, "buy_operator": "<", "offset_ma_buy": 25, "ma_buy": 15,
-        "offset_cl_sell": 25, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 20,
-        "use_trend_in_buy": True, "use_trend_in_sell": False,
-        "offset_compare_short": 1, "ma_compare_short": 15,
-        "offset_compare_long": 25, "ma_compare_long": 15,         
-        "stop_loss_pct": 0.0, "take_profit_pct": 10.0
-    },
-      
     "SOXS를 SOXL 보고 사기 전략": {
         "signal_ticker": "SOXL", "trade_ticker": "SOXS",
         "offset_cl_buy": 5, "buy_operator": ">", "offset_ma_buy": 25, "ma_buy": 15,
@@ -556,6 +546,16 @@ PRESETS = {
         "stop_loss_pct": 0.0, "take_profit_pct": 9.0
     }, 
 
+    "453850 ACE 미국30년국채 전략": {
+        "signal_ticker": "453850", "trade_ticker": "453850",
+        "offset_cl_buy": 15, "buy_operator": "<", "offset_ma_buy": 25, "ma_buy": 15,
+        "offset_cl_sell": 25, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 20,
+        "use_trend_in_buy": True, "use_trend_in_sell": False,
+        "offset_compare_short": 1, "ma_compare_short": 15,
+        "offset_compare_long": 25, "ma_compare_long": 15,         
+        "stop_loss_pct": 0.0, "take_profit_pct": 10.0
+    },
+          
     "465580 ACE미국빅테크TOP7PLUS": {
         "signal_ticker": "465580", "trade_ticker": "465580",
         "offset_cl_buy": 1, "buy_operator": ">", "offset_ma_buy": 1, "ma_buy": 5,
@@ -2019,6 +2019,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
