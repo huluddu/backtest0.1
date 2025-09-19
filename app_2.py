@@ -589,22 +589,17 @@ PRESETS = {
 
 
 # === PRESETS 전체 오늘 시그널 일괄 체크 ===
-def summarize_signal_today(df, p):
-    p_rt.update({
-    "offset_cl_buy": 0, "offset_ma_buy": 0,
-    "offset_cl_sell": 0, "offset_ma_sell": 0,
-    "offset_compare_short": 0, "offset_compare_long": 0,
-    })
-    p_rt.update({
-    "buy_operator": buy_operator, "sell_operator": sell_operator,
-    "use_trend_in_buy": use_trend_in_buy, "use_trend_in_sell": use_trend_in_sell,
-    "ma_buy": ma_buy, "offset_ma_buy": offset_ma_buy, "offset_cl_buy": offset_cl_buy,
-    "ma_sell": ma_sell, "offset_ma_sell": offset_ma_sell, "offset_cl_sell": offset_cl_sell,
-    "ma_compare_short": ma_compare_short, "ma_compare_long": ma_compare_long,
-    "offset_compare_short": offset_compare_short, "offset_compare_long": offset_compare_long,
-    })
+def summarize_signal_today(df, p, *, force_today_offsets=False):
     if df.empty:
         return {"label": "데이터없음", "last_buy": None, "last_sell": None, "last_hold": None}
+    p = dict(p)  # 원본 보호
+
+    if force_today_offsets:
+        p.update({
+            "offset_cl_buy": 0, "offset_ma_buy": 0,
+            "offset_cl_sell": 0, "offset_ma_sell": 0,
+            "offset_compare_short": 0, "offset_compare_long": 0,
+        })
 
     df = df.copy().sort_values("Date").reset_index(drop=True)
     df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
@@ -2009,6 +2004,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
