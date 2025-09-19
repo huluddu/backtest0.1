@@ -268,7 +268,7 @@ def check_signal_today(
         return
 
     st.subheader("📌 오늘 시그널 판단")
-    st.write(f"📆 기준일: {ref_date}")
+    st.write(f"📆 기준일 (데이터가 있는 마지막 날): {ref_date}")
 
     trend_ok = True
     trend_msg = "비활성화"
@@ -2019,6 +2019,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
