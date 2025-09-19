@@ -262,7 +262,7 @@ def check_signal_today(
         ma_b = float(df["MA_BUY"].iloc[i - offset_ma_buy])
         cl_s = float(df["Close"].iloc[i - offset_cl_sell])
         ma_s = float(df["MA_SELL"].iloc[i - offset_ma_sell])
-        ref_date = df["Date"].iloc[i].strftime('%Y-%m-%d')
+        ref_date = df["Date"].iloc[-1].strftime('%Y-%m-%d')
     except Exception as e:
         st.warning(f"❗오늘 시그널 판단에 필요한 데이터가 부족합니다: {e}")
         return
@@ -2019,6 +2019,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
