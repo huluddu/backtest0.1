@@ -611,8 +611,7 @@ def summarize_signal_today(df, p):
 
     # 추세
     trend_ok = True
-    if p.get("ma_compare_short") and p.get("ma_compare_long") and \
-   ("MA_SHORT" in df.columns) and ("MA_LONG" in df.columns):
+    if p.get("ma_compare_short") and p.get("ma_compare_long") and ("MA_SHORT" in df.columns) and ("MA_LONG" in df.columns):
         try:
             ms = float(df["MA_SHORT"].iloc[i - p["offset_compare_short"]])
             ml = float(df["MA_LONG"].iloc[i - p["offset_compare_long"]])
@@ -646,7 +645,7 @@ def summarize_signal_today(df, p):
             ms = df["MA_SELL"].iloc[j - p["offset_ma_sell"]]
 
             trend_pass = True
-            if p.get("ma_compare_short") and p.get("ma_compare_long") and "MA_SHORT" in df and "MA_LONG" in df:
+            if p.get("ma_compare_short") and p.get("ma_compare_long") and "MA_SHORT" in df and "MA_LONG" in df.columns:
                 ms_short = df["MA_SHORT"].iloc[j - p["offset_compare_short"]]
                 ms_long  = df["MA_LONG"].iloc[j - p["offset_compare_long"]]
                 trend_pass = (ms_short >= ms_long)
@@ -680,7 +679,7 @@ st.title("📊 전략 백테스트 웹앱")
 st.markdown("모든 매매는 종가 매매이나, 손절,익절은 장중 시가. n일전 데이터 기반으로 금일 종가 매매를 한다.")
 st.markdown("KODEX미국반도체 390390, KODEX200 069500 KDOEX인버스 114800, KODEX미국나스닥100 379810, ACEKRX금현물 411060, KODEX은선물 114800, ACE미국30년국채액티브(H) 453850, ACE미국빅테크TOP7Plus 465580")
 
-    # 📌 프리셋 선택 UI
+# 📌 프리셋 선택 UI
 selected_preset = st.selectbox("🎯 전략 프리셋 선택", ["직접 설정"] + list(PRESETS.keys()))
 preset_values = {} if selected_preset == "직접 설정" else PRESETS[selected_preset]
 
@@ -1099,8 +1098,6 @@ def backtest_fast(
             buy_price = None
             pending_action, pending_due_idx = None, None
 
-        base_sell = sell_condition
-        can_sell  = (position > 0.0) and base_sell and (hold_days >= min_hold_days)
         def _schedule(action):
             nonlocal pending_action, pending_due_idx
             pending_action = action
@@ -1998,6 +1995,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
