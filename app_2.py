@@ -1896,8 +1896,8 @@ with st.expander("🎲 랜덤 시뮬 변수 후보 입력", expanded=False):
         txt_ma_cmp_l          = st.text_input("ma_compare_long 후보",   "same")
 
         txt_use_trend_buy     = st.text_input("use_trend_in_buy 후보(True/False)",  "True,False")
-        txt_use_trend_sell    = st.text_input("use_trend_in_sell 후보(True/False)", "True,False")
-        txt_stop_loss         = st.text_input("stop_loss_pct 후보(%)",  "0,10")
+        txt_use_trend_sell    = st.text_input("use_trend_in_sell 후보(True/False)", "True")
+        txt_stop_loss         = st.text_input("stop_loss_pct 후보(%)",  "0")
         txt_take_profit       = st.text_input("take_profit_pct 후보(%)","0,10,30")
 
     n_simulations = st.number_input("시뮬레이션 횟수", value=100, min_value=1, step=10)
@@ -2019,6 +2019,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
