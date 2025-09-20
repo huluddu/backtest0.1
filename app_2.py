@@ -553,7 +553,7 @@ PRESETS = {
         "use_trend_in_buy": True, "use_trend_in_sell": True,
         "offset_compare_short": 15, "ma_compare_short": 10,
         "offset_compare_long": 1, "ma_compare_long": 15,         
-        "stop_loss_pct": 0.0, "take_profit_pct": 9.0
+        "stop_loss_pct": 0.0, "take_profit_pct": 10.0
     }, 
 
     "453850 ACE 미국30년국채 전략": {
@@ -594,6 +594,16 @@ PRESETS = {
         "offset_compare_short": 5, "ma_compare_short": 15,
         "offset_compare_long": 15, "ma_compare_long": 10,         
         "stop_loss_pct": 0.0, "take_profit_pct": 10.0
+    },
+
+    "483280 AITOP10커브드콜": {
+        "signal_ticker": "483280", "trade_ticker": "483280",
+        "offset_cl_buy": 25, "buy_operator": ">", "offset_ma_buy": 25, "ma_buy": 20,
+        "offset_cl_sell": 25, "sell_operator": ">", "offset_ma_sell": 5, "ma_sell": 20, 
+        "use_trend_in_buy": True, "use_trend_in_sell": True,
+        "offset_compare_short": 1, "ma_compare_short": 20,
+        "offset_compare_long": 15, "ma_compare_long": 5,         
+        "stop_loss_pct": 0.0, "take_profit_pct": 0.0
     },
 }
 
@@ -2029,6 +2039,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
