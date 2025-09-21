@@ -804,7 +804,8 @@ def summarize_signal_today(df, p, *, force_today_offsets=False):
         except Exception:
             continue
 
-    return {"label": label, "last_buy": last_buy, "last_sell": last_sell, "last_hold": last_hold}
+    return {"label": label, "last_buy": last_buy, "last_sell": last_sell, "last_hold": last_hold,
+            "reserved_flat": reserved_if_flat, "reserved_hold": reserved_if_holding}          # ✅ 추가
 
 
 #########################################################    
@@ -969,6 +970,8 @@ if st.button("📚 PRESETS 전체 오늘 시그널 보기"):
             "최근 BUY": res["last_buy"] or "-",
             "최근 SELL": res["last_sell"] or "-",
             "최근 HOLD": res["last_hold"] or "-",
+            "예약(무포지션)": res.get("reserved_flat") or "-",   # ✅
+            "예약(보유중)":   res.get("reserved_hold") or "-"   # ✅
         })
     st.subheader("🧭 PRESETS 오늘 시그널 요약")
     st.dataframe(pd.DataFrame(rows))
@@ -2153,6 +2156,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
