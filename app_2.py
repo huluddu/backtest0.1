@@ -13,6 +13,15 @@ import numpy as np
 import random
 import re
 
+def _normalize_krx_ticker(t: str) -> str:
+    """'069500.KS' -> '069500', '371460' -> '371460'"""
+    if not isinstance(t, str):
+        t = str(t or "")
+    t = t.strip().upper()
+    t = re.sub(r"\.(KS|KQ)$", "", t)  # 접미사 제거
+    m = re.search(r"(\d{6})", t)
+    return m.group(1) if m else ""
+
 def _parse_choices(text, cast="int"):
     """
     콤마/공백 구분 입력 문자열을 리스트로 파싱.
@@ -73,24 +82,47 @@ def _fast_ma(x: np.ndarray, w: int) -> np.ndarray:
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_krx_data_cached(ticker: str, start_date, end_date):
-    """KRX(숫자티커)용: OHLC 로딩 (손절/익절 장중체크용)"""
-    df = stock.get_etf_ohlcv_by_date(
-        start_date.strftime("%Y%m%d"),
-        end_date.strftime("%Y%m%d"),
-        ticker
+    """KRX(숫자 6자리)용: OHLC 로딩 (ETF/일반 모두 커버, 빈DF 가드 포함)"""
+    code = _normalize_krx_ticker(ticker)
+    if not code:
+        return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close"])
+
+    s = start_date.strftime("%Y%m%d")
+    e = end_date.strftime("%Y%m%d")
+
+    df = pd.DataFrame()
+    try:
+        # 1) ETF 먼저 시도
+        df = stock.get_etf_ohlcv_by_date(s, e, code)
+        if df is None or df.empty:
+            # 2) 일반 종목(주식/ETF 모두 커버)로 재시도
+            df = stock.get_market_ohlcv_by_date(s, e, code)
+    except Exception:
+        df = pd.DataFrame()
+
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close"])
+
+    df = (
+        df.reset_index()
+          .rename(columns={"날짜": "Date", "시가": "Open", "고가": "High",
+                           "저가": "Low", "종가": "Close"})
+          .loc[:, ["Date", "Open", "High", "Low", "Close"]]
+          .dropna()
     )
-    df = df.reset_index().rename(columns={
-        "날짜": "Date", "시가": "Open", "고가": "High", "저가": "Low", "종가": "Close"
-    })
-    df = df[["Date", "Open", "High", "Low", "Close"]].dropna()
     return df
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_yf_data_cached(ticker: str, start_date, end_date):
-    """야후파이낸스용: OHLC 로딩 (손절/익절 장중체크용)"""
-    df = yf.download(ticker, start=start_date, end=end_date)
+    """야후파이낸스용: OHLC 로딩 (빈DF/멀티컬럼 가드)"""
+    df = yf.download(ticker, start=start_date, end=end_date, progress=False)
+
+    # ✅ 빈 DF·컬럼 누락 가드
+    if df is None or df.empty or (isinstance(df, pd.DataFrame) and len(df.columns) == 0):
+        return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close"])
+
     if isinstance(df.columns, pd.MultiIndex):
-        tu = ticker.upper()
+        tu = str(ticker).upper()
         try:
             o = df[("Open",  tu)]
             h = df[("High",  tu)]
@@ -99,23 +131,44 @@ def get_yf_data_cached(ticker: str, start_date, end_date):
             df = pd.concat([o, h, l, c], axis=1)
             df.columns = ["Open", "High", "Low", "Close"]
         except Exception:
-            # 멀티컬럼 구조가 다를 때의 안전장치
-            df = df.droplevel(1, axis=1)[["Open", "High", "Low", "Close"]]
+            df = df.droplevel(1, axis=1)
+            # 일부 케이스에 특정 컬럼이 빠질 수 있어, 부족하면 안전 반환
+            if not {"Open","High","Low","Close"}.issubset(df.columns):
+                return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close"])
+            df = df[["Open", "High", "Low", "Close"]]
     else:
+        # 단일 컬럼 구조에서도 누락 시 안전 반환
+        if not {"Open","High","Low","Close"}.issubset(df.columns):
+            return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close"])
         df = df[["Open", "High", "Low", "Close"]]
-    df = df.reset_index().rename(columns={"Date": "Date"})
+
+    df = df.reset_index()
+    # 인덱스명이 Datetime/Date 등 다양해서 일괄 표준화
+    if "Date" not in df.columns and "Datetime" in df.columns:
+        df.rename(columns={"Datetime": "Date"}, inplace=True)
+
+    # 최종 표준 스키마 보장
+    if not {"Date","Open","High","Low","Close"}.issubset(df.columns):
+        return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close"])
+
     df = df[["Date", "Open", "High", "Low", "Close"]].dropna()
     return df
 
+
 def get_data(ticker: str, start_date, end_date) -> pd.DataFrame:
-    """티커 타입에 따라 KRX/yf 로더 분기"""
+    """티커 타입에 따라 KRX/yf 로더 분기 ('.KS' '.KQ' 포함, 실패시 표준 빈 스키마)"""
     try:
-        if ticker.lower().endswith(".ks") or ticker.isdigit():
-            return get_krx_data_cached(ticker, start_date, end_date)
-        return get_yf_data_cached(ticker, start_date, end_date)
+        t = (ticker or "").strip()
+        is_krx_like = t.isdigit() or t.lower().endswith(".ks") or t.lower().endswith(".kq")
+        df = get_krx_data_cached(t, start_date, end_date) if is_krx_like \
+             else get_yf_data_cached(t, start_date, end_date)
+        if df is None or df.empty or not {"Date","Open","High","Low","Close"}.issubset(df.columns):
+            return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close"])
+        return df
     except Exception as e:
         st.error(f"❌ 데이터 로딩 실패: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close"])
+
 
 
 @st.cache_data(show_spinner=False, ttl=30)
@@ -814,7 +867,7 @@ if st.button("⚡ 오늘 시그널 체크 (실시간)"):
     if df_today.empty:
         st.error("기본 데이터 로딩 실패")
     else:
-        is_krx = (signal_ticker.isdigit() or signal_ticker.lower().endswith(".ks"))
+        is_krx = (signal_ticker.isdigit() or signal_ticker.lower().endswith(".ks") or signal_ticker.lower().endswith(".kq"))
         if is_krx:
             st.warning("국내 티커는 일봉 데이터로 판정합니다.")
             check_signal_today(
@@ -882,7 +935,7 @@ if st.button("📚 PRESETS 전체 오늘 시그널 (실시간)"):
             )
 
             # 2) 미주 티커면 1분봉 → 세션 집계로 '오늘/최근' 반영
-            if not (sig_tic.isdigit() or sig_tic.lower().endswith(".ks")):
+            if not (sig_tic.isdigit() or sig_tic.lower().endswith(".ks") or sig_tic.lower().endswith(".kq")):  # (미주 티커 → 1분봉 집계 반영)
                 daily_close_1m, last_px, last_ts = get_yf_1m_grouped_close(
                     sig_tic, tz=tz, session_start=session_start, session_end=session_end
                 )
@@ -2039,6 +2092,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
