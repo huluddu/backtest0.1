@@ -804,6 +804,9 @@ def summarize_signal_today(df, p, *, force_today_offsets=False):
         except Exception:
             continue
 
+    reserved_if_flat    = _preview_pending_label(buy_ok, sell_ok, position=0, min_hold_days=0, strategy_behavior="1. 포지션 없으면 매수 / 보유 중이면 매도")
+    reserved_if_holding = _preview_pending_label(buy_ok, sell_ok, position=1, min_hold_days=0, strategy_behavior="1. 포지션 없으면 매수 / 보유 중이면 매도")
+    
     return {"label": label, "last_buy": last_buy, "last_sell": last_sell, "last_hold": last_hold,
             "reserved_flat": reserved_if_flat, "reserved_hold": reserved_if_holding}          # ✅ 추가
 
@@ -2156,6 +2159,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
