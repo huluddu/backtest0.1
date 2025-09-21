@@ -935,7 +935,6 @@ if st.button("⚡ 오늘 시그널 체크 (실시간)"):
                 use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell,
                 strategy_behavior=strategy_behavior,      # ✅ 추가
                 min_hold_days=int(min_hold_days)          # ✅ 추가
-)
             )
         else:
             check_signal_today_realtime(
@@ -2150,6 +2149,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
