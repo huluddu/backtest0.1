@@ -80,6 +80,48 @@ def _fast_ma(x: np.ndarray, w: int) -> np.ndarray:
         y[w-1:] = conv
     return y
 
+### 예약 정보 불러오는 함수 ###
+
+def _preview_pending_label(buy_ok: bool, sell_ok: bool, *, position: int, min_hold_days: int, strategy_behavior: str):
+    """
+    '오늘' 조건(buy_ok/sell_ok) 기준으로, 내일 체결한다고 가정했을 때
+    예약될 액션을 미리보기. position: 0(무포지션) 또는 1(보유중 가정)
+    반환: "BUY 예약", "SELL 예약", 또는 None
+    """
+    sb = (strategy_behavior or "1")[:1]  # "1" | "2" | "3"
+    can_sell = (position > 0) and (min_hold_days <= 0)
+
+    if sb == "1":
+        if buy_ok and sell_ok:
+            return "BUY 예약" if position == 0 else ("SELL 예약" if can_sell else None)
+        if position == 0 and buy_ok:
+            return "BUY 예약"
+        if can_sell and sell_ok:
+            return "SELL 예약"
+        return None
+
+    elif sb == "2":
+        if buy_ok and sell_ok:
+            return "BUY 예약" if position == 0 else None
+        if position == 0 and buy_ok:
+            return "BUY 예약"
+        if can_sell and sell_ok:
+            return "SELL 예약"
+        return None
+
+    else:  # sb == "3"
+        if buy_ok and sell_ok:
+            return ("SELL 예약" if (position > 0 and can_sell) else None)
+        if position == 0 and buy_ok:
+            return "BUY 예약"
+        if can_sell and sell_ok:
+            return "SELL 예약"
+        return None
+
+
+##########################
+
+
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_krx_data_cached(ticker: str, start_date, end_date):
     """KRX(숫자 6자리)용: OHLC 로딩 (ETF/일반 모두 커버, 빈DF 가드 포함)"""
@@ -360,6 +402,15 @@ def check_signal_today(
         st.error("📉 오늘은 매도 시그널입니다!")
     else:
         st.info("⏸ 매수/매도 조건 모두 만족하지 않음")
+
+        # --- 예약 미리보기 (내일 체결 가정) ---
+    pending_flat   = _preview_pending_label(buy_ok, sell_ok, position=0, min_hold_days=min_hold_days, strategy_behavior=strategy_behavior)
+    pending_holding= _preview_pending_label(buy_ok, sell_ok, position=1, min_hold_days=min_hold_days, strategy_behavior=strategy_behavior)
+
+    lines = []
+    lines.append(f"무포지션 가정 → {pending_flat}" if pending_flat else "무포지션 가정 → 예약 없음")
+    lines.append(f"보유중 가정 → {pending_holding}" if pending_holding else "보유중 가정 → 예약 없음")
+    st.info("📝 예약 미리보기\n- " + "\n- ".join(lines))
 
     # ── 최근 조건 만족일 찾기: BUY / SELL / HOLD(둘 다 불만족) ──
     last_buy_date  = None
@@ -857,7 +908,9 @@ if st.button("📌 오늘 시그널 체크"):
             buy_operator=buy_operator,
             sell_operator=sell_operator,
             use_trend_in_buy=use_trend_in_buy,
-            use_trend_in_sell=use_trend_in_sell
+            use_trend_in_sell=use_trend_in_sell,
+            strategy_behavior=strategy_behavior,      # ✅ 추가
+            min_hold_days=int(min_hold_days)          # ✅ 추가
         )
 
 #with st.expander("⚡ yfinance 1분봉으로 오늘 시그널 재확인", expanded=False):
@@ -879,7 +932,10 @@ if st.button("⚡ 오늘 시그널 체크 (실시간)"):
                 ma_compare_long=ma_compare_long  if (ma_compare_long  or 0) > 0 else None,
                 offset_compare_short=offset_compare_short, offset_compare_long=offset_compare_long,
                 buy_operator=buy_operator, sell_operator=sell_operator,
-                use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
+                use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell,
+                strategy_behavior=strategy_behavior,      # ✅ 추가
+                min_hold_days=int(min_hold_days)          # ✅ 추가
+)
             )
         else:
             check_signal_today_realtime(
@@ -891,7 +947,9 @@ if st.button("⚡ 오늘 시그널 체크 (실시간)"):
                 ma_compare_short=ma_compare_short, ma_compare_long=ma_compare_long,
                 offset_compare_short=offset_compare_short, offset_compare_long=offset_compare_long,
                 buy_operator=buy_operator, sell_operator=sell_operator,
-                use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell
+                use_trend_in_buy=use_trend_in_buy, use_trend_in_sell=use_trend_in_sell,
+                strategy_behavior=strategy_behavior,      # ✅ 추가
+                min_hold_days=int(min_hold_days)          # ✅ 추가
             )
 
 # === 시그널 한번에 보기 UI 버튼 추가 ===
@@ -2092,6 +2150,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
