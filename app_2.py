@@ -338,7 +338,10 @@ def check_signal_today(
     ma_compare_short=None, ma_compare_long=None,
     offset_compare_short=1, offset_compare_long=1,
     buy_operator=">", sell_operator="<",
-    use_trend_in_buy=True, use_trend_in_sell=False
+    use_trend_in_buy=True, use_trend_in_sell=False,
+    *,                       # ← 키워드 전용
+    strategy_behavior="1. 포지션 없으면 매수 / 보유 중이면 매도",
+    min_hold_days=0
 ):
 
     df = df.copy()
@@ -403,6 +406,7 @@ def check_signal_today(
     else:
         st.info("⏸ 매수/매도 조건 모두 만족하지 않음")
 
+    
         # --- 예약 미리보기 (내일 체결 가정) ---
     pending_flat   = _preview_pending_label(buy_ok, sell_ok, position=0, min_hold_days=min_hold_days, strategy_behavior=strategy_behavior)
     pending_holding= _preview_pending_label(buy_ok, sell_ok, position=1, min_hold_days=min_hold_days, strategy_behavior=strategy_behavior)
@@ -2149,6 +2153,7 @@ with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
