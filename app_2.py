@@ -1716,145 +1716,145 @@ with tab2:
 
     # 실시간(US 1분봉 집계 반영)
     if st.button("📚 PRESETS 전체 오늘 시그널 (실시간)", use_container_width=True):
-    rows = []
-    tz = "America/New_York"
-    session_start, session_end = "09:30", "16:00"
+        rows = []
+        tz = "America/New_York"
+        session_start, session_end = "09:30", "16:00"
 
-    for name, p in PRESETS.items():
-        sig_tic = (p.get("signal_ticker") or p.get("trade_ticker") or "").strip()
-        src = "EOD"
+        for name, p in PRESETS.items():
+            sig_tic = (p.get("signal_ticker") or p.get("trade_ticker") or "").strip()
+            src = "EOD"
 
-        # 1) 기본 데이터 확보 + Date 정규화
-        df0 = get_data(sig_tic, start_date, end_date)
-        if df0 is None or df0.empty:
-            rows.append({
-                "전략명": name, "티커": sig_tic, "시그널": "데이터없음",
-                "최근 BUY": "-", "최근 SELL": "-", "최근 HOLD": "-", "가격소스": src
-            })
-            continue
-
-        # Date가 인덱스일 수도 있으니 방어적으로 처리
-        if "Date" not in df0.columns:
-            df0 = df0.reset_index()
-
-        df0["Date"] = pd.to_datetime(df0["Date"], errors="coerce")
-        df0 = df0.dropna(subset=["Date"])
-        if "Close" not in df0.columns:
-            # get_data가 컬럼명을 다르게 줄 가능성 방어
-            if "close" in df0.columns:
-                df0 = df0.rename(columns={"close": "Close"})
-            else:
+            # 1) 기본 데이터 확보 + Date 정규화
+            df0 = get_data(sig_tic, start_date, end_date)
+            if df0 is None or df0.empty:
                 rows.append({
                     "전략명": name, "티커": sig_tic, "시그널": "데이터없음",
-                    "최근 BUY": "-", "최근 SELL": "-", "최근 HOLD": "-", "가격소스": "EOD(컬럼없음)"
+                    "최근 BUY": "-", "최근 SELL": "-", "최근 HOLD": "-", "가격소스": src
                 })
                 continue
 
-        df_rt = (
-            df0.sort_values("Date")
-               .drop_duplicates(subset=["Date"])
-               .reset_index(drop=True)
-        )
+            # Date가 인덱스일 수도 있으니 방어적으로 처리
+            if "Date" not in df0.columns:
+                df0 = df0.reset_index()
 
-        # 2) 미주 티커면 1분봉으로 '오늘' 캔들 덮어쓰기
-        is_krx_like = (sig_tic.isdigit() or sig_tic.lower().endswith((".ks", ".kq")))
-        if not is_krx_like:
-            try:
-                daily_close_1m, last_px, last_ts = get_yf_1m_grouped_close(
-                    sig_tic, tz=tz, session_start=session_start, session_end=session_end
-                )
-            except Exception:
-                daily_close_1m, last_px, last_ts = None, None, None
+            df0["Date"] = pd.to_datetime(df0["Date"], errors="coerce")
+            df0 = df0.dropna(subset=["Date"])
+            if "Close" not in df0.columns:
+                # get_data가 컬럼명을 다르게 줄 가능성 방어
+                if "close" in df0.columns:
+                    df0 = df0.rename(columns={"close": "Close"})
+                else:
+                    rows.append({
+                        "전략명": name, "티커": sig_tic, "시그널": "데이터없음",
+                        "최근 BUY": "-", "최근 SELL": "-", "최근 HOLD": "-", "가격소스": "EOD(컬럼없음)"
+                    })
+                    continue
 
-            # daily_close_1m이 Series/DataFrame 형태일 때만 진행
-            has_1m = hasattr(daily_close_1m, "empty") and (not daily_close_1m.empty) and (last_ts is not None)
-            if has_1m:
-                ts = pd.Timestamp(last_ts)
-                ts = ts.tz_localize("UTC").tz_convert(tz) if ts.tz is None else ts.tz_convert(tz)
-                today_sess_date = ts.date()  # 뉴욕 기준 세션 날짜
+            df_rt = (
+                df0.sort_values("Date")
+                   .drop_duplicates(subset=["Date"])
+                   .reset_index(drop=True)
+            )
 
-                # 인덱스 타입이 date이든 Timestamp이든 간에 '오늘' 값을 안정적으로 찾기
-                today_close = np.nan
+            # 2) 미주 티커면 1분봉으로 '오늘' 캔들 덮어쓰기
+            is_krx_like = (sig_tic.isdigit() or sig_tic.lower().endswith((".ks", ".kq")))
+            if not is_krx_like:
                 try:
-                    idx_dt = pd.to_datetime(getattr(daily_close_1m, "index", []), errors="coerce")
-                    # tz-aware면 naive로 맞춘 뒤 normalize해서 '날짜'만 비교
-                    try:
-                        idx_dt = idx_dt.tz_localize(None)
-                    except Exception:
-                        pass
-                    mask = (idx_dt.normalize() == pd.Timestamp(today_sess_date))
-                    if hasattr(mask, "any") and mask.any():
-                        # Series/DataFrame 모두 대응
-                        if isinstance(daily_close_1m, pd.Series):
-                            today_close = float(daily_close_1m[mask].iloc[-1])
-                        else:
-                            # DataFrame이면 마지막 컬럼 또는 첫 컬럼 사용 (관례적으로 Close 한 열만 있다고 가정)
-                            today_close = float(daily_close_1m[mask].iloc[-1].squeeze())
-                except Exception:
-                    pass
-
-                # 라벨 기반 백업 조회 (date/Timestamp 둘 다 시도)
-                if pd.isna(today_close):
-                    try:
-                        val = daily_close_1m.get(today_sess_date, np.nan)
-                        if pd.notna(val):
-                            today_close = float(val)
-                    except Exception:
-                        pass
-                if pd.isna(today_close):
-                    try:
-                        val = daily_close_1m.get(pd.Timestamp(today_sess_date), np.nan)
-                        if pd.notna(val):
-                            today_close = float(val)
-                    except Exception:
-                        pass
-
-                # 오늘 값이 있으면 df_rt에 덮어쓰기/추가
-                if pd.notna(today_close):
-                    d0 = pd.Timestamp(today_sess_date)  # naive 자정
-                    # Date normalize로 비교(시간이 섞여 있어도 동작)
-                    norm = df_rt["Date"].dt.normalize()
-                    if (norm == d0).any():
-                        df_rt.loc[norm == d0, "Close"] = today_close
-                    else:
-                        df_rt = pd.concat([df_rt, pd.DataFrame([{"Date": d0, "Close": today_close}])], ignore_index=True)
-
-                    df_rt = (
-                        df_rt.sort_values("Date")
-                             .drop_duplicates(subset=["Date"])
-                             .reset_index(drop=True)
+                    daily_close_1m, last_px, last_ts = get_yf_1m_grouped_close(
+                        sig_tic, tz=tz, session_start=session_start, session_end=session_end
                     )
-                    src = "yfinance_1m_grouped"
+                except Exception:
+                    daily_close_1m, last_px, last_ts = None, None, None
 
-        # 3) 오늘 시그널 산출 (오프셋 0으로 고정)
-        p_rt = dict(p)
-        p_rt.update({
-            "offset_cl_buy": 0, "offset_ma_buy": 0,
-            "offset_cl_sell": 0, "offset_ma_sell": 0,
-            "offset_compare_short": 0, "offset_compare_long": 0,
-        })
+                # daily_close_1m이 Series/DataFrame 형태일 때만 진행
+                has_1m = hasattr(daily_close_1m, "empty") and (not daily_close_1m.empty) and (last_ts is not None)
+                if has_1m:
+                    ts = pd.Timestamp(last_ts)
+                    ts = ts.tz_localize("UTC").tz_convert(tz) if ts.tz is None else ts.tz_convert(tz)
+                    today_sess_date = ts.date()  # 뉴욕 기준 세션 날짜
 
-        res = summarize_signal_today(df_rt, p_rt)
-        if not isinstance(res, dict):
-            res = {}
-        rows.append({
-            "전략명": name,
-            "티커": sig_tic,
-            "시그널": res.get("label", "계산실패"),
-            "최근 BUY":  res.get("last_buy")  or "-",
-            "최근 SELL": res.get("last_sell") or "-",
-            "최근 HOLD": res.get("last_hold") or "-",
-            "가격소스": src,
-        })
+                    # 인덱스 타입이 date이든 Timestamp이든 간에 '오늘' 값을 안정적으로 찾기
+                    today_close = np.nan
+                    try:
+                        idx_dt = pd.to_datetime(getattr(daily_close_1m, "index", []), errors="coerce")
+                        # tz-aware면 naive로 맞춘 뒤 normalize해서 '날짜'만 비교
+                        try:
+                            idx_dt = idx_dt.tz_localize(None)
+                        except Exception:
+                            pass
+                        mask = (idx_dt.normalize() == pd.Timestamp(today_sess_date))
+                        if hasattr(mask, "any") and mask.any():
+                            # Series/DataFrame 모두 대응
+                            if isinstance(daily_close_1m, pd.Series):
+                                today_close = float(daily_close_1m[mask].iloc[-1])
+                            else:
+                                # DataFrame이면 마지막 컬럼 또는 첫 컬럼 사용 (관례적으로 Close 한 열만 있다고 가정)
+                                today_close = float(daily_close_1m[mask].iloc[-1].squeeze())
+                    except Exception:
+                        pass
 
-    df_rt_view = pd.DataFrame(rows)
-    st.dataframe(df_rt_view, use_container_width=True)
-    st.download_button(
-        "⬇️ CSV 다운로드 (실시간 요약)",
-        data=df_rt_view.to_csv(index=False).encode("utf-8-sig"),
-        file_name="presets_signal_realtime.csv",
-        mime="text/csv"
-    )
+                    # 라벨 기반 백업 조회 (date/Timestamp 둘 다 시도)
+                    if pd.isna(today_close):
+                        try:
+                            val = daily_close_1m.get(today_sess_date, np.nan)
+                            if pd.notna(val):
+                                today_close = float(val)
+                        except Exception:
+                            pass
+                    if pd.isna(today_close):
+                        try:
+                            val = daily_close_1m.get(pd.Timestamp(today_sess_date), np.nan)
+                            if pd.notna(val):
+                                today_close = float(val)
+                        except Exception:
+                            pass
+
+                    # 오늘 값이 있으면 df_rt에 덮어쓰기/추가
+                    if pd.notna(today_close):
+                        d0 = pd.Timestamp(today_sess_date)  # naive 자정
+                        # Date normalize로 비교(시간이 섞여 있어도 동작)
+                        norm = df_rt["Date"].dt.normalize()
+                        if (norm == d0).any():
+                            df_rt.loc[norm == d0, "Close"] = today_close
+                        else:
+                            df_rt = pd.concat([df_rt, pd.DataFrame([{"Date": d0, "Close": today_close}])], ignore_index=True)
+
+                        df_rt = (
+                            df_rt.sort_values("Date")
+                                 .drop_duplicates(subset=["Date"])
+                                 .reset_index(drop=True)
+                        )
+                        src = "yfinance_1m_grouped"
+
+            # 3) 오늘 시그널 산출 (오프셋 0으로 고정)
+            p_rt = dict(p)
+            p_rt.update({
+                "offset_cl_buy": 0, "offset_ma_buy": 0,
+                "offset_cl_sell": 0, "offset_ma_sell": 0,
+                "offset_compare_short": 0, "offset_compare_long": 0,
+            })
+
+            res = summarize_signal_today(df_rt, p_rt)
+            if not isinstance(res, dict):
+                res = {}
+            rows.append({
+                "전략명": name,
+                "티커": sig_tic,
+                "시그널": res.get("label", "계산실패"),
+                "최근 BUY":  res.get("last_buy")  or "-",
+                "최근 SELL": res.get("last_sell") or "-",
+                "최근 HOLD": res.get("last_hold") or "-",
+                "가격소스": src,
+            })
+
+        df_rt_view = pd.DataFrame(rows)
+        st.dataframe(df_rt_view, use_container_width=True)
+        st.download_button(
+            "⬇️ CSV 다운로드 (실시간 요약)",
+            data=df_rt_view.to_csv(index=False).encode("utf-8-sig"),
+            file_name="presets_signal_realtime.csv",
+            mime="text/csv"
+        )
 
 # ───────────────────────────────────────
 # TAB3: 백테스트
@@ -2172,5 +2172,6 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
