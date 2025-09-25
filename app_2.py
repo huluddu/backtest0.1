@@ -11,6 +11,12 @@ from functools import lru_cache
 import numpy as np
 import random
 import re
+try:
+    from pykrx import stock
+except ModuleNotFoundError as e:
+    import streamlit as st
+    st.error("필수 의존성(setuptools)이 누락되어 pykrx 로드에 실패했습니다. requirements.txt에 'setuptools>=70'을 추가 후 재배포하세요.")
+    raise
 
 # ============== Page Setup & Header (UI only) ==============
 st.set_page_config(page_title="시그널 대시보드", page_icon="📊", layout="wide")
@@ -2172,6 +2178,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
