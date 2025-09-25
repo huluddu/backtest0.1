@@ -6,37 +6,6 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import itertools
 import random
-
-# ---- put this ABOVE "from pykrx import stock" ----
-import sys, subprocess, importlib
-
-def ensure_setuptools():
-    try:
-        import pkg_resources  # provided by setuptools
-    except Exception:
-        # setuptools 설치 (없으면)
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "setuptools>=70"])
-        import importlib
-        importlib.invalidate_caches()
-        # 재시도
-        import pkg_resources  # noqa
-
-# 1) setuptools 보장
-ensure_setuptools()
-
-# 2) 이제 pykrx import 시도
-try:
-    from pykrx import stock
-except ModuleNotFoundError as e:
-    # pykrx 자체가 없는 경우(로컬/런타임 미설치), 즉석 설치 후 재시도
-    if "pykrx" in str(e):
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "pykrx"])
-        importlib.invalidate_caches()
-        from pykrx import stock  # noqa
-    else:
-        raise
-
-
 #from pykrx import stock
 from functools import lru_cache
 import numpy as np
@@ -2205,6 +2174,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
