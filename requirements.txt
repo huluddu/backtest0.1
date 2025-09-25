@@ -6,8 +6,8 @@ wheel
 # --- your imports ---
 streamlit
 pykrx
-pandas>=2.1,<2.3
-numpy>=1.25
+pandas
+numpy
 yfinance
 plotly
 matplotlib
@@ -17,4 +17,6 @@ requests
 beautifulsoup4
 lxml
 python-dateutil
+
+
 
