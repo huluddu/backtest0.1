@@ -1,6 +1,6 @@
 # --- core (pykrx가 pkg_resources를 쓰므로 필수) ---
-pip>=24
-setuptools>=70
+#pip>=24
+#setuptools>=70
 wheel
 
 # --- your imports ---
@@ -17,6 +17,7 @@ requests
 beautifulsoup4
 lxml
 python-dateutil
+
 
 
 
