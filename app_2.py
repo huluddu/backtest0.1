@@ -19,8 +19,9 @@ def _call_backtest_fast_safe(
     offset_cl_buy, offset_cl_sell,
     ma_compare_short, ma_compare_long,
     offset_compare_short, offset_compare_long,
-    **kwargs,  # initial_cash, fee_bps, strategy_behavior, ...
+    **kwargs,
 ):
+    """backtest_fast가 실제로 받는 키워드만 추려서 안전 호출"""
     sig = inspect.signature(backtest_fast)
     allowed = set(sig.parameters.keys())
     safe_kwargs = {k: v for k, v in kwargs.items() if k in allowed}
@@ -32,6 +33,7 @@ def _call_backtest_fast_safe(
         offset_compare_short, offset_compare_long,
         **safe_kwargs
     )
+
 
 
 
@@ -85,29 +87,28 @@ def _sample_params(choices_dict: dict, base_params: dict) -> dict:
     return p
 
 def run_random_simulations_fast(
-    n_simulations: int,
+    n_simulations,
     base, x_sig, x_trd, ma_dict_sig,
-    *,  # ← 여기부터 키워드 전용
-    initial_cash=5_000_000, fee_bps=25, slip_bps=0,
-    choices_dict: dict = None,
-    strategy_behavior="1. 포지션 없으면 매수 / 보유 중이면 매도",
-    min_hold_days=0,
-    **_extra  # ← 정의에 없는 키워드가 와도 안전하게 흡수
-) -> pd.DataFrame:
-    import random
-    rows = []
+    **kwargs  # 👈 여분 키워드 전부 허용(choices_dict, strategy_behavior, min_hold_days 등)
+):
+    """
+    호출부가 어떤 키워드를 주더라도 TypeError 없이 받아서 실행.
+    필요한 값이 없으면 합리적 기본값 사용.
+    """
+    # 기본값 채우기
+    initial_cash      = kwargs.get("initial_cash", 5_000_000)
+    fee_bps           = kwargs.get("fee_bps", 25)
+    slip_bps          = kwargs.get("slip_bps", 0)
+    choices_dict      = kwargs.get("choices_dict") or {}
+    strategy_behavior = kwargs.get("strategy_behavior", "1. 포지션 없으면 매수 / 보유 중이면 매도")
+    min_hold_days     = kwargs.get("min_hold_days", 0)
 
-    # 현재 UI 파라미터를 기본값으로
+    rows = []
     base_params = _current_params_from_state()
 
-    # 입력 정규화
-    choices_dict = choices_dict or {}
-
     for _ in range(int(n_simulations)):
-        # ① 랜덤 샘플 1개
         p = _sample_params(choices_dict, base_params)
 
-        # ② 백테스트 실행 (안전 래퍼 사용)
         res = _call_backtest_fast_safe(
             base, x_sig, x_trd, ma_dict_sig,
             p["ma_buy"], p["offset_ma_buy"], p["ma_sell"], p["offset_ma_sell"],
@@ -122,15 +123,14 @@ def run_random_simulations_fast(
             use_trend_in_sell=p.get("use_trend_in_sell", False),
             buy_operator=p.get("buy_operator", ">"),
             sell_operator=p.get("sell_operator", "<"),
-            strategy_behavior=strategy_behavior,   # backtest_fast가 모르면 자동 필터됨
-            min_hold_days=min_hold_days,           # ↑ 동일
+            strategy_behavior=strategy_behavior,
+            min_hold_days=min_hold_days,
             execution_lag_days=1,
             execution_price_mode="next_close",
         )
         if not res:
             continue
 
-        # ③ 결과 적재
         rows.append({
             "수익률 (%)": res.get("수익률 (%)"),
             "승률 (%)": res.get("승률 (%)"),
@@ -2633,6 +2633,7 @@ with tab4:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
