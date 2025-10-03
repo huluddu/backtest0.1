@@ -2449,15 +2449,23 @@ with tab3:
                     elif r.get("신호") == "SELL" and buy_cache is not None:
                         pb = buy_cache.get("체결가") if pd.notna(buy_cache.get("체결가", np.nan)) else buy_cache.get("종가")
                         ps = r.get("체결가") if pd.notna(r.get("체결가", np.nan)) else r.get("종가")
-                        if pd.notna(pb) and pd.notna(ps):
+
+                        # 날짜 안전 변환
+                        tb = pd.to_datetime(buy_cache.get("날짜"), errors="coerce")
+                        ts = pd.to_datetime(r.get("날짜"), errors="coerce")
+                        date_buy  = tb.strftime("%Y-%m-%d") if not pd.isna(tb) else None
+                        date_sell = ts.strftime("%Y-%m-%d") if not pd.isna(ts) else None
+
+                        
+                        if pd.notna(pb) and pd.notna(ps) and date_buy and date_sell:
                             pnl = (ps - pb) / pb * 100
                             pairs.append({
                                 "진입일": buy_cache.name.strftime("%Y-%m-%d"),
                                 "청산일": r.name.strftime("%Y-%m-%d"),
-                                "진입가(체결가)": round(pb, 4),
-                                "청산가(체결가)": round(ps, 4),
+                                "진입가(체결가)": round(float(pb), 4),
+                                "청산가(체결가)": round(float(ps), 4),
                                 "보유일": r.get("보유일"),
-                                "수익률(%)": round(pnl, 2),
+                                "수익률(%)": round(float(pnl), 2),
                                 "청산이유": "손절" if r.get("손절발동") else ("익절" if r.get("익절발동") else "규칙매도")
                             })
                         buy_cache = None
@@ -2625,6 +2633,7 @@ with tab4:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
