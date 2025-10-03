@@ -2358,5 +2358,151 @@ with tab3:
                 st.warning("매매 로그가 비어 있습니다.")
 
 
+# ── 랜덤 시뮬 / 자동 탐색 ──
+with st.expander("🎲 랜덤 전략 시뮬레이션 실행", expanded=False):
+    colL, colR = st.columns(2)
+    with colL:
+        txt_offset_cl_buy     = st.text_input("offset_cl_buy 후보",     "1,5,15,25")
+        txt_buy_op            = st.text_input("buy_operator 후보",      ">,<")
+        txt_offset_ma_buy     = st.text_input("offset_ma_buy 후보",     "1,5,15,25")
+        txt_ma_buy            = st.text_input("ma_buy 후보",            "5,10,15,20,25")
 
+        txt_offset_cl_sell    = st.text_input("offset_cl_sell 후보",    "1,5,15,25")
+        txt_sell_op           = st.text_input("sell_operator 후보",     "<,>")
+        txt_offset_ma_sell    = st.text_input("offset_ma_sell 후보",    "1,5,15,25")
+        txt_ma_sell           = st.text_input("ma_sell 후보",           "5,10,15,20,25")
 
+    with colR:
+        txt_off_cmp_s         = st.text_input("offset_compare_short 후보", "1,5,15,25")
+        txt_ma_cmp_s          = st.text_input("ma_compare_short 후보",     "5,10,15,20,25")
+        txt_off_cmp_l         = st.text_input("offset_compare_long 후보",  "1,5,15,25")
+        txt_ma_cmp_l          = st.text_input("ma_compare_long 후보",      "same")
+
+        txt_use_trend_buy     = st.text_input("use_trend_in_buy 후보(True/False)",  "True,False")
+        txt_use_trend_sell    = st.text_input("use_trend_in_sell 후보(True/False)", "True")
+        txt_stop_loss         = st.text_input("stop_loss_pct 후보(%)",  "0")
+        txt_take_profit       = st.text_input("take_profit_pct 후보(%)","0,10,30")
+
+    n_simulations = st.number_input("시뮬레이션 횟수", value=100, min_value=1, step=10)
+
+    # 현재 데이터(prepare_base) 미리 준비
+    signal_ticker = st.session_state.get("signal_ticker_input", "SOXL")
+    trade_ticker  = st.session_state.get("trade_ticker_input", "SOXL")
+    start_date    = st.session_state.get("start_date")
+    end_date      = st.session_state.get("end_date")
+
+    ma_pool = [5, 10, 15, 20, 25, 50]
+    base, x_sig, x_trd, ma_dict_sig = prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool)
+
+    if st.session_state.get("seed", 0):
+        random.seed(int(st.session_state["seed"]))
+
+    choices_dict = {
+        "ma_buy":               _parse_list(txt_ma_buy, "int"),
+        "offset_ma_buy":        _parse_list(txt_offset_ma_buy, "int"),
+        "offset_cl_buy":        _parse_list(txt_offset_cl_buy, "int"),
+        "buy_operator":         _parse_list(txt_buy_op, "str"),
+
+        "ma_sell":              _parse_list(txt_ma_sell, "int"),
+        "offset_ma_sell":       _parse_list(txt_offset_ma_sell, "int"),
+        "offset_cl_sell":       _parse_list(txt_offset_cl_sell, "int"),
+        "sell_operator":        _parse_list(txt_sell_op, "str"),
+
+        "use_trend_in_buy":     _parse_list(txt_use_trend_buy, "bool"),
+        "use_trend_in_sell":    _parse_list(txt_use_trend_sell, "bool"),
+
+        "ma_compare_short":     _parse_list(txt_ma_cmp_s, "int"),
+        "ma_compare_long":      _parse_list(txt_ma_cmp_l, "int"),
+        "offset_compare_short": _parse_list(txt_off_cmp_s, "int"),
+        "offset_compare_long":  _parse_list(txt_off_cmp_l, "int"),
+
+        "stop_loss_pct":        _parse_list(txt_stop_loss, "float"),
+        "take_profit_pct":      _parse_list(txt_take_profit, "float"),
+    }
+
+    if st.button("🧪 랜덤 전략 시뮬레이션 실행", use_container_width=True, key="btn_randrun"):
+        if base is None or len(base) == 0:
+            st.warning("데이터가 부족합니다. 기간/티커를 확인하세요.")
+        else:
+            df_sim = run_random_simulations_fast(
+                int(n_simulations), base, x_sig, x_trd, ma_dict_sig,
+                initial_cash=_safe_int(st.session_state.get("initial_cash", 5_000_000)),
+                fee_bps=_safe_int(st.session_state.get("fee_bps", 25)),
+                slip_bps=_safe_int(st.session_state.get("slip_bps", 0)),
+                choices_dict=choices_dict,
+                strategy_behavior=st.session_state.get("strategy_behavior", "1. 포지션 없으면 매수 / 보유 중이면 매도"),
+                min_hold_days=_safe_int(st.session_state.get("min_hold_days", 0))
+            )
+            if df_sim.empty:
+                st.warning("유효한 결과가 없습니다. 후보군/횟수를 조정하세요.")
+            else:
+                st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
+                st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True), use_container_width=True)
+                st.download_button("⬇️ 결과 다운로드 (CSV)",
+                                   data=df_sim.to_csv(index=False).encode("utf-8-sig"),
+                                   file_name="random_sim_results.csv", mime="text/csv",
+                                   key="dl_rand_csv")
+
+with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False):
+    st.markdown("""
+- 아래 후보군을 토대로 **랜덤 탐색**을 수행합니다.  
+- 기간을 **Train/Test로 분할**하여 **일반화 성능**을 같이 확인합니다.  
+- 제약조건(최소 매매 횟수, 최소 승률, 최대 MDD)으로 필터링 후,  
+  선택한 **목표 지표(Test)** 기준으로 정렬합니다.
+""")
+
+    colA, colB = st.columns(2)
+    with colA:
+        split_ratio = st.slider("Train 비중 (나머지 Test)", min_value=0.5, max_value=0.9, value=0.7, step=0.05, key="split_ratio")
+        objective_metric = st.selectbox("목표 지표", ["수익률 (%)", "승률 (%)", "샤프", "Profit Factor", "MDD (%)"], index=0, key="obj_metric")
+        objective_mode = "min" if objective_metric == "MDD (%)" else "max"
+        n_trials = st.number_input("탐색 시도 횟수 (랜덤)", value=200, min_value=20, step=20, key="n_trials")
+        topn_show = st.number_input("상위 N개만 표시", value=10, min_value=5, step=5, key="topn_show")
+    with colB:
+        min_trades = st.number_input("제약: 최소 매매 횟수", value=5, min_value=0, step=1, key="min_trades")
+        min_winrate = st.number_input("제약: 최소 승률(%)", value=55.0, step=1.0, key="min_winrate")
+        max_mdd_in = st.number_input("제약: 최대 MDD(%) (0=미적용)", value=0.0, step=1.0, key="max_mdd_input")
+        max_mdd = None if max_mdd_in == 0.0 else float(max_mdd_in)
+
+    # 후보군은 위 랜덤 섹션과 동일 입력을 재사용
+    choices_dict_auto = choices_dict  # 동일 객체 사용
+
+    if st.button("🚀 자동 탐색 실행 (Train/Test)", use_container_width=True, key="btn_auto_search"):
+        df_auto = auto_search_train_test(
+            signal_ticker=signal_ticker, trade_ticker=trade_ticker,
+            start_date=start_date, end_date=end_date,
+            split_ratio=float(split_ratio),
+            choices_dict=choices_dict_auto,
+            n_trials=int(n_trials),
+            objective_metric=objective_metric,
+            objective_mode=objective_mode,
+            initial_cash=_safe_int(st.session_state.get("initial_cash", 5_000_000)),
+            fee_bps=_safe_int(st.session_state.get("fee_bps", 25)),
+            slip_bps=_safe_int(st.session_state.get("slip_bps", 0)),
+            strategy_behavior=st.session_state.get("strategy_behavior", "1. 포지션 없으면 매수 / 보유 중이면 매도"),
+            min_hold_days=_safe_int(st.session_state.get("min_hold_days", 0)),
+            execution_lag_days=1,
+            execution_price_mode="next_close",
+            constraints={"min_trades": int(min_trades), "min_winrate": float(min_winrate), "max_mdd": max_mdd}
+        )
+
+        if df_auto.empty:
+            st.warning("조건을 만족하는 결과가 없거나 데이터가 부족합니다. 후보군/제약/기간을 조정해 보세요.")
+        else:
+            st.subheader(f"🏆 자동 탐색 결과 (상위 {int(topn_show)}개, Test {objective_metric} 기준 정렬)")
+            st.dataframe(df_auto.head(int(topn_show)), use_container_width=True)
+            st.download_button("⬇️ 자동 탐색 결과 다운로드 (CSV)",
+                               data=df_auto.to_csv(index=False).encode("utf-8-sig"),
+                               file_name="auto_search_train_test.csv", mime="text/csv",
+                               key="dl_auto_csv")
+
+            with st.expander("🔥 베스트 파라미터 1개 즉시 적용(선택)", expanded=False):
+                best = df_auto.iloc[0].to_dict()
+                st.write({k: best.get(k) for k in [
+                    "ma_buy","offset_ma_buy","offset_cl_buy","buy_operator",
+                    "ma_sell","offset_ma_sell","offset_cl_sell","sell_operator",
+                    "use_trend_in_buy","use_trend_in_sell",
+                    "ma_compare_short","ma_compare_long",
+                    "offset_compare_short","offset_compare_long",
+                    "stop_loss_pct","take_profit_pct","min_hold_days"
+                ]})
