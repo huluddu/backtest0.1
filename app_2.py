@@ -19,21 +19,26 @@ def _call_backtest_fast_safe(
     offset_cl_buy, offset_cl_sell,
     ma_compare_short, ma_compare_long,
     offset_compare_short, offset_compare_long,
-    **kwargs,
+    **kwargs,  # 여기에 initial_cash, fee_bps 등도 들어옴
 ):
-    """backtest_fast가 실제로 받는 키워드만 추려서 안전 호출"""
+    """
+    backtest_fast가 실제로 지원하는 파라미터만 추려서 안전하게 호출.
+    """
     sig = inspect.signature(backtest_fast)
     allowed = set(sig.parameters.keys())
-    safe_kwargs = {k: v for k, v in kwargs.items() if k in allowed}
+
+    # 위치 인자(필수 13개)는 그대로 넘기고,
+    # 키워드 인자는 허용되는 것만 필터링
+    kw = {k: v for k, v in kwargs.items() if k in allowed}
+
     return backtest_fast(
         base, x_sig, x_trd, ma_dict_sig,
         ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
         offset_cl_buy, offset_cl_sell,
         ma_compare_short, ma_compare_long,
         offset_compare_short, offset_compare_long,
-        **safe_kwargs
+        **kw
     )
-
 
 
 
@@ -87,50 +92,38 @@ def _sample_params(choices_dict: dict, base_params: dict) -> dict:
     return p
 
 def run_random_simulations_fast(
-    n_simulations,
+    n_simulations: int,
     base, x_sig, x_trd, ma_dict_sig,
-    **kwargs  # 👈 여분 키워드 전부 허용(choices_dict, strategy_behavior, min_hold_days 등)
-):
-    """
-    호출부가 어떤 키워드를 주더라도 TypeError 없이 받아서 실행.
-    필요한 값이 없으면 합리적 기본값 사용.
-    """
-    # 기본값 채우기
-    initial_cash      = kwargs.get("initial_cash", 5_000_000)
-    fee_bps           = kwargs.get("fee_bps", 25)
-    slip_bps          = kwargs.get("slip_bps", 0)
-    choices_dict      = kwargs.get("choices_dict") or {}
-    strategy_behavior = kwargs.get("strategy_behavior", "1. 포지션 없으면 매수 / 보유 중이면 매도")
-    min_hold_days     = kwargs.get("min_hold_days", 0)
-
+    *, initial_cash=5_000_000, fee_bps=25, slip_bps=0,
+    choices_dict: dict, strategy_behavior="1. 포지션 없으면 매수 / 보유 중이면 매도",
+    min_hold_days=0
+) -> pd.DataFrame:
     rows = []
+    # 기본 파라미터(현재 UI 값)에서 랜덤 치환
     base_params = _current_params_from_state()
-
-    for _ in range(int(n_simulations)):
+    for i in range(int(n_simulations)):
         p = _sample_params(choices_dict, base_params)
-
-        res = _call_backtest_fast_safe(
-            base, x_sig, x_trd, ma_dict_sig,
-            p["ma_buy"], p["offset_ma_buy"], p["ma_sell"], p["offset_ma_sell"],
-            p["offset_cl_buy"], p["offset_cl_sell"],
-            (p["ma_compare_short"] if (p.get("ma_compare_short") or 0) > 0 else None),
-            (p["ma_compare_long"]  if (p.get("ma_compare_long")  or 0) > 0 else None),
-            p["offset_compare_short"], p["offset_compare_long"],
-            initial_cash=initial_cash, fee_bps=fee_bps, slip_bps=slip_bps,
-            stop_loss_pct=p.get("stop_loss_pct", 0.0),
-            take_profit_pct=p.get("take_profit_pct", 0.0),
-            use_trend_in_buy=p.get("use_trend_in_buy", True),
-            use_trend_in_sell=p.get("use_trend_in_sell", False),
-            buy_operator=p.get("buy_operator", ">"),
-            sell_operator=p.get("sell_operator", "<"),
-            strategy_behavior=strategy_behavior,
-            min_hold_days=min_hold_days,
-            execution_lag_days=1,
-            execution_price_mode="next_close",
-        )
+        # backtest 실행
+        res = _call_backtest_fast_safe(base, x_sig, x_trd, ma_dict_sig,
+    p["ma_buy"], p["offset_ma_buy"], p["ma_sell"], p["offset_ma_sell"],
+    p["offset_cl_buy"], p["offset_cl_sell"],
+    (p["ma_compare_short"] if (p.get("ma_compare_short") or 0) > 0 else None),
+    (p["ma_compare_long"]  if (p.get("ma_compare_long")  or 0) > 0 else None),
+    p["offset_compare_short"], p["offset_compare_long"],
+    # 아래부터는 키워드 — 네 backtest_fast가 받는 것만 자동 필터됨
+    initial_cash=initial_cash, fee_bps=fee_bps, slip_bps=slip_bps,
+    stop_loss_pct=p.get("stop_loss_pct", 0.0), take_profit_pct=p.get("take_profit_pct", 0.0),
+    use_trend_in_buy=p.get("use_trend_in_buy", True),
+    use_trend_in_sell=p.get("use_trend_in_sell", False),
+    buy_operator=p.get("buy_operator", ">"),
+    sell_operator=p.get("sell_operator", "<"),
+    strategy_behavior=strategy_behavior,   # 없다면 자동 필터
+    min_hold_days=min_hold_days,           # 없다면 자동 필터
+    execution_lag_days=1,                  # 없다면 자동 필터
+    execution_price_mode="next_close",     # 없다면 자동 필터
+                                      )
         if not res:
             continue
-
         rows.append({
             "수익률 (%)": res.get("수익률 (%)"),
             "승률 (%)": res.get("승률 (%)"),
@@ -146,7 +139,6 @@ def run_random_simulations_fast(
             "stop_loss_pct": p.get("stop_loss_pct", 0.0), "take_profit_pct": p.get("take_profit_pct", 0.0),
             "min_hold_days": p.get("min_hold_days", 0),
         })
-
     return pd.DataFrame(rows)
 
 def auto_search_train_test(
@@ -1381,6 +1373,147 @@ def _sample_params(choices_dict, defaults):
         "min_hold_days":      defaults["min_hold_days"],
     }
 
+def auto_search_train_test(
+    signal_ticker, trade_ticker,
+    start_date, end_date,
+    split_ratio,                    # 예: 0.7 → 앞 70% train, 뒤 30% test
+    choices_dict,
+    n_trials=200,
+    objective_metric="수익률 (%)",
+    objective_mode="max",           # "max" 또는 "min"
+    initial_cash=5_000_000,
+    fee_bps=0, slip_bps=0,
+    strategy_behavior="1. 포지션 없으면 매수 / 보유 중이면 매도",
+    min_hold_days=0,
+    execution_lag_days=1,
+    execution_price_mode="next_close",
+    constraints=None,               # {"min_trades": 5, "min_winrate": 0.0, "max_mdd": None}
+):
+    """랜덤 탐색 기반 자동 최적화 + Train/Test 일반화 성능 확인."""
+    constraints = constraints or {}
+    min_trades  = constraints.get("min_trades", 0)
+    min_winrate = constraints.get("min_winrate", 0.0)
+    max_mdd     = constraints.get("max_mdd", None)
+
+    # 기본값
+    defaults = dict(
+        ma_buy=25, offset_ma_buy=1, offset_cl_buy=25, buy_operator=">",
+        ma_sell=25, offset_ma_sell=1, offset_cl_sell=1, sell_operator="<",
+        use_trend_in_buy=True, use_trend_in_sell=False,
+        ma_compare_short=0, ma_compare_long=0, offset_compare_short=1, offset_compare_long=1,
+        stop_loss_pct=0.0, take_profit_pct=0.0,
+        initial_cash=initial_cash, strategy_behavior=strategy_behavior, min_hold_days=min_hold_days
+    )
+
+    # 후보 MA 윈도우 풀(최소화): 속도 위해 집합으로 모아 계산
+    ma_pool = set()
+    for key in ("ma_buy", "ma_sell", "ma_compare_short", "ma_compare_long"):
+        for v in choices_dict.get(key, []):
+            if v == "same":  # "same"은 실제 숫자 아님
+                continue
+            if isinstance(v, int) and v > 0:
+                ma_pool.add(v)
+    if not ma_pool:
+        ma_pool = {5, 10, 15, 25}
+
+    # 전체 base (split용 날짜 시퀀스 얻기)
+    base_full, x_sig_full, x_trd_full, _ = prepare_base(signal_ticker, trade_ticker, start_date, end_date, list(ma_pool))
+    n_all = len(base_full)
+    if n_all < 50:
+        return pd.DataFrame()
+
+    split_idx = int(n_all * split_ratio)
+    # 날짜 기준으로 split
+    date_train_end = pd.to_datetime(base_full["Date"].iloc[split_idx - 1]).date()
+
+    # Train
+    base_tr, x_sig_tr, x_trd_tr, ma_tr = prepare_base(signal_ticker, trade_ticker, start_date, date_train_end, list(ma_pool))
+    # Test
+    base_te, x_sig_te, x_trd_te, ma_te = prepare_base(signal_ticker, trade_ticker, date_train_end, end_date, list(ma_pool))
+
+    base_pack_tr = (base_tr, x_sig_tr, x_trd_tr, ma_tr)
+    base_pack_te = (base_te, x_sig_te, x_trd_te, ma_te)
+    fees_pack    = (fee_bps, slip_bps)
+    exec_pack    = (execution_lag_days, execution_price_mode)
+
+    results = []
+    seen = set()
+
+    for _ in range(int(n_trials)):
+        params = _sample_params(choices_dict, defaults)
+
+        # 중복 파라미터 skip (간단 직렬화)
+        sig_key = tuple(sorted((k, str(v)) for k, v in params.items()))
+        if sig_key in seen:
+            continue
+        seen.add(sig_key)
+
+        # Train 실행
+        r_tr = _try_backtest_once(params, base_pack_tr, fees_pack, exec_pack)
+        if not r_tr:
+            continue
+
+        # 제약조건 필터
+        trades  = r_tr.get("총 매매 횟수", 0)
+        wr      = r_tr.get("승률 (%)", 0.0)
+        mdd_val = r_tr.get("MDD (%)", 0.0)
+        if trades < min_trades: 
+            continue
+        if wr < min_winrate:
+            continue
+        if (max_mdd is not None) and (mdd_val > max_mdd):
+            continue
+
+        score = _score_from_summary(r_tr, objective_metric, objective_mode)
+        if score is None:
+            continue
+
+        # Test 실행 (일반화 성능)
+        r_te = _try_backtest_once(params, base_pack_te, fees_pack, exec_pack)
+        if not r_te:
+            continue
+
+        row = {
+            # === Train 성과 ===
+            "Train_"+objective_metric: r_tr.get(objective_metric, None),
+            "Train_수익률(%)": r_tr.get("수익률 (%)", None),
+            "Train_승률(%)": r_tr.get("승률 (%)", None),
+            "Train_MDD(%)": r_tr.get("MDD (%)", None),
+            "Train_ProfitFactor": r_tr.get("Profit Factor", None),
+            "Train_총매매": r_tr.get("총 매매 횟수", None),
+
+            # === Test 성과 ===
+            "Test_"+objective_metric: r_te.get(objective_metric, None),
+            "Test_수익률(%)": r_te.get("수익률 (%)", None),
+            "Test_승률(%)": r_te.get("승률 (%)", None),
+            "Test_MDD(%)": r_te.get("MDD (%)", None),
+            "Test_ProfitFactor": r_te.get("Profit Factor", None),
+            "Test_총매매": r_te.get("총 매매 횟수", None),
+        }
+
+        # 파라미터 기록
+        row.update({
+            "offset_cl_buy": params["offset_cl_buy"], "buy_operator": params["buy_operator"], "offset_ma_buy": params["offset_ma_buy"], "ma_buy": params["ma_buy"],
+            "offset_cl_sell": params["offset_cl_sell"], "sell_operator": params["sell_operator"], "offset_ma_sell": params["offset_ma_sell"],"ma_sell": params["ma_sell"],
+            "use_trend_in_buy": params["use_trend_in_buy"], "use_trend_in_sell": params["use_trend_in_sell"],
+            "offset_compare_short": params["offset_compare_short"], "ma_compare_short": params["ma_compare_short"],
+            "offset_compare_long": params["offset_compare_long"], "ma_compare_long": params["ma_compare_long"],
+            "stop_loss_pct": params["stop_loss_pct"], "take_profit_pct": params["take_profit_pct"],
+            "min_hold_days": params["min_hold_days"]
+        })
+        results.append(row)
+
+    df = pd.DataFrame(results)
+    if df.empty:
+        return df
+
+    # 정렬 기준: objective_metric의 Test 성과 기준(동률 시 Train 보조)
+    test_col  = "Test_"+objective_metric
+    train_col = "Train_"+objective_metric
+    ascending = (objective_mode == "min")
+    df = df.sort_values(by=[test_col, train_col], ascending=[ascending, ascending], na_position="last").reset_index(drop=True)
+    return df
+
 
 
 # ===== Fast Random Sims =====
@@ -2449,23 +2582,15 @@ with tab3:
                     elif r.get("신호") == "SELL" and buy_cache is not None:
                         pb = buy_cache.get("체결가") if pd.notna(buy_cache.get("체결가", np.nan)) else buy_cache.get("종가")
                         ps = r.get("체결가") if pd.notna(r.get("체결가", np.nan)) else r.get("종가")
-
-                        # 날짜 안전 변환
-                        tb = pd.to_datetime(buy_cache.get("날짜"), errors="coerce")
-                        ts = pd.to_datetime(r.get("날짜"), errors="coerce")
-                        date_buy  = tb.strftime("%Y-%m-%d") if not pd.isna(tb) else None
-                        date_sell = ts.strftime("%Y-%m-%d") if not pd.isna(ts) else None
-
-                        
-                        if pd.notna(pb) and pd.notna(ps) and date_buy and date_sell:
+                        if pd.notna(pb) and pd.notna(ps):
                             pnl = (ps - pb) / pb * 100
                             pairs.append({
                                 "진입일": buy_cache.name.strftime("%Y-%m-%d"),
                                 "청산일": r.name.strftime("%Y-%m-%d"),
-                                "진입가(체결가)": round(float(pb), 4),
-                                "청산가(체결가)": round(float(ps), 4),
+                                "진입가(체결가)": round(pb, 4),
+                                "청산가(체결가)": round(ps, 4),
                                 "보유일": r.get("보유일"),
-                                "수익률(%)": round(float(pnl), 2),
+                                "수익률(%)": round(pnl, 2),
                                 "청산이유": "손절" if r.get("손절발동") else ("익절" if r.get("익절발동") else "규칙매도")
                             })
                         buy_cache = None
@@ -2633,9 +2758,5 @@ with tab4:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
-
-
-
-
 
 
