@@ -12,6 +12,229 @@ import numpy as np
 import random
 import re
 
+# ===== 랜덤 시뮬/자동 탐색 헬퍼 =====
+import random
+
+def _parse_list(text, typ="int"):
+    if text is None: return []
+    toks = [t for t in re.split(r"[,\s]+", str(text).strip()) if t]
+    def to_bool(s): return str(s).strip().lower() in ("1","true","t","y","yes","on")
+    out = []
+    for t in toks:
+        if typ == "int":
+            out.append("same" if str(t).lower()=="same" else int(t))
+        elif typ == "float":
+            out.append(float(t))
+        elif typ == "bool":
+            out.append(to_bool(t))
+        else:
+            out.append(str(t))
+    # dedup
+    seen, dedup = set(), []
+    for v in out:
+        k = (typ, v)
+        if k in seen: continue
+        seen.add(k); dedup.append(v)
+    return dedup
+
+def _sample_params(choices_dict: dict, base_params: dict) -> dict:
+    """choices_dict에서 랜덤 샘플 1개 뽑아 base_params에 덮어쓰기"""
+    p = dict(base_params)
+    for k, arr in (choices_dict or {}).items():
+        if not arr: 
+            continue
+        v = random.choice(arr)
+        if v == "same":      # ma_compare_long = 'same' 같은 케이스
+            if k == "ma_compare_long":
+                v = p.get("ma_compare_short", p.get("ma_buy"))
+            elif k == "ma_compare_short":
+                v = p.get("ma_compare_long", p.get("ma_buy"))
+        p[k] = v
+    # 타입 정리
+    ints = ["ma_buy","offset_ma_buy","offset_cl_buy","ma_sell","offset_ma_sell","offset_cl_sell",
+            "ma_compare_short","ma_compare_long","offset_compare_short","offset_compare_long",
+            "min_hold_days"]
+    floats = ["stop_loss_pct","take_profit_pct"]
+    for k in ints:
+        if p.get(k) is not None: p[k] = _safe_int(p[k])
+    for k in floats:
+        if p.get(k) is not None: p[k] = _safe_float(p[k])
+    return p
+
+def run_random_simulations_fast(
+    n_simulations: int,
+    base, x_sig, x_trd, ma_dict_sig,
+    *, initial_cash=5_000_000, fee_bps=25, slip_bps=0,
+    choices_dict: dict, strategy_behavior="1. 포지션 없으면 매수 / 보유 중이면 매도",
+    min_hold_days=0
+) -> pd.DataFrame:
+    rows = []
+    # 기본 파라미터(현재 UI 값)에서 랜덤 치환
+    base_params = _current_params_from_state()
+    for i in range(int(n_simulations)):
+        p = _sample_params(choices_dict, base_params)
+        # backtest 실행
+        res = backtest_fast(
+            base, x_sig, x_trd, ma_dict_sig,
+            p["ma_buy"], p["offset_ma_buy"], p["ma_sell"], p["offset_ma_sell"],
+            p["offset_cl_buy"], p["offset_cl_sell"],
+            (p["ma_compare_short"] if (p.get("ma_compare_short") or 0) > 0 else None),
+            (p["ma_compare_long"]  if (p.get("ma_compare_long")  or 0) > 0 else None),
+            p["offset_compare_short"], p["offset_compare_long"],
+            initial_cash=initial_cash, fee_bps=fee_bps, slip_bps=slip_bps,
+            stop_loss_pct=p.get("stop_loss_pct", 0.0), take_profit_pct=p.get("take_profit_pct", 0.0),
+            use_trend_in_buy=p.get("use_trend_in_buy", True),
+            use_trend_in_sell=p.get("use_trend_in_sell", False),
+            buy_operator=p.get("buy_operator", ">"),
+            sell_operator=p.get("sell_operator", "<"),
+            strategy_behavior=strategy_behavior,
+            min_hold_days=min_hold_days,
+            execution_lag_days=1,
+            execution_price_mode="next_close",
+        )
+        if not res:
+            continue
+        rows.append({
+            "수익률 (%)": res.get("수익률 (%)"),
+            "승률 (%)": res.get("승률 (%)"),
+            "MDD (%)": res.get("MDD (%)"),
+            "Profit Factor": res.get("Profit Factor"),
+            "총 매매 횟수": res.get("총 매매 횟수"),
+            # 파라미터 기록
+            "ma_buy": p["ma_buy"], "offset_ma_buy": p["offset_ma_buy"], "offset_cl_buy": p["offset_cl_buy"], "buy_operator": p["buy_operator"],
+            "ma_sell": p["ma_sell"], "offset_ma_sell": p["offset_ma_sell"], "offset_cl_sell": p["offset_cl_sell"], "sell_operator": p["sell_operator"],
+            "use_trend_in_buy": p["use_trend_in_buy"], "use_trend_in_sell": p["use_trend_in_sell"],
+            "ma_compare_short": p["ma_compare_short"], "ma_compare_long": p["ma_compare_long"],
+            "offset_compare_short": p["offset_compare_short"], "offset_compare_long": p["offset_compare_long"],
+            "stop_loss_pct": p.get("stop_loss_pct", 0.0), "take_profit_pct": p.get("take_profit_pct", 0.0),
+            "min_hold_days": p.get("min_hold_days", 0),
+        })
+    return pd.DataFrame(rows)
+
+def auto_search_train_test(
+    *, signal_ticker, trade_ticker, start_date, end_date,
+    split_ratio: float,
+    choices_dict: dict, n_trials: int,
+    objective_metric: str, objective_mode: str,
+    initial_cash: int, fee_bps: int, slip_bps: int,
+    strategy_behavior: str, min_hold_days: int,
+    execution_lag_days: int, execution_price_mode: str,
+    constraints: dict
+) -> pd.DataFrame:
+    """간단한 Train/Test 랜덤 탐색 (objective_metric: '수익률 (%)' 등)"""
+    # 데이터 로딩 1회
+    # train/test를 날짜로 나눠 prepare_base 두 번 호출
+    s = pd.to_datetime(start_date); e = pd.to_datetime(end_date)
+    cutoff = s + (e - s) * float(split_ratio)
+
+    # 후보군에서 필요한 MA window 모으기
+    ma_pool = set([_safe_int(v) for v in [
+        _current_params_from_state()["ma_buy"], _current_params_from_state()["ma_sell"]
+    ] if v])
+    for k in ("ma_buy","ma_sell","ma_compare_short","ma_compare_long"):
+        for v in choices_dict.get(k, []):
+            if v == "same": continue
+            if isinstance(v, int) and v > 0:
+                ma_pool.add(int(v))
+    ma_pool = sorted(ma_pool) if ma_pool else [5,10,20,25]
+
+    # 각각 준비
+    base_tr, x_sig_tr, x_trd_tr, ma_dict_tr = prepare_base(signal_ticker, trade_ticker, s, cutoff, ma_pool)
+    base_te, x_sig_te, x_trd_te, ma_dict_te = prepare_base(signal_ticker, trade_ticker, cutoff, e, ma_pool)
+
+    base_params = _current_params_from_state()
+    rows = []
+    for i in range(int(n_trials)):
+        p = _sample_params(choices_dict, base_params)
+
+        # train
+        res_tr = backtest_fast(
+            base_tr, x_sig_tr, x_trd_tr, ma_dict_tr,
+            p["ma_buy"], p["offset_ma_buy"], p["ma_sell"], p["offset_ma_sell"],
+            p["offset_cl_buy"], p["offset_cl_sell"],
+            (p["ma_compare_short"] if (p.get("ma_compare_short") or 0) > 0 else None),
+            (p["ma_compare_long"]  if (p.get("ma_compare_long")  or 0) > 0 else None),
+            p["offset_compare_short"], p["offset_compare_long"],
+            initial_cash=initial_cash, fee_bps=fee_bps, slip_bps=slip_bps,
+            stop_loss_pct=p.get("stop_loss_pct", 0.0), take_profit_pct=p.get("take_profit_pct", 0.0),
+            use_trend_in_buy=p.get("use_trend_in_buy", True),
+            use_trend_in_sell=p.get("use_trend_in_sell", False),
+            buy_operator=p.get("buy_operator", ">"),
+            sell_operator=p.get("sell_operator", "<"),
+            strategy_behavior=strategy_behavior,
+            min_hold_days=min_hold_days,
+            execution_lag_days=execution_lag_days,
+            execution_price_mode=execution_price_mode,
+        )
+        if not res_tr:
+            continue
+
+        # test
+        res_te = backtest_fast(
+            base_te, x_sig_te, x_trd_te, ma_dict_te,
+            p["ma_buy"], p["offset_ma_buy"], p["ma_sell"], p["offset_ma_sell"],
+            p["offset_cl_buy"], p["offset_cl_sell"],
+            (p["ma_compare_short"] if (p.get("ma_compare_short") or 0) > 0 else None),
+            (p["ma_compare_long"]  if (p.get("ma_compare_long")  or 0) > 0 else None),
+            p["offset_compare_short"], p["offset_compare_long"],
+            initial_cash=initial_cash, fee_bps=fee_bps, slip_bps=slip_bps,
+            stop_loss_pct=p.get("stop_loss_pct", 0.0), take_profit_pct=p.get("take_profit_pct", 0.0),
+            use_trend_in_buy=p.get("use_trend_in_buy", True),
+            use_trend_in_sell=p.get("use_trend_in_sell", False),
+            buy_operator=p.get("buy_operator", ">"),
+            sell_operator=p.get("sell_operator", "<"),
+            strategy_behavior=strategy_behavior,
+            min_hold_days=min_hold_days,
+            execution_lag_days=execution_lag_days,
+            execution_price_mode=execution_price_mode,
+        )
+        if not res_te:
+            continue
+
+        # 제약조건 필터
+        min_trades = constraints.get("min_trades", 0)
+        min_winrate = constraints.get("min_winrate", 0.0)
+        max_mdd = constraints.get("max_mdd", None)
+
+        if res_te.get("총 매매 횟수", 0) < int(min_trades):
+            continue
+        if res_te.get("승률 (%)", 0.0) < float(min_winrate):
+            continue
+        if (max_mdd is not None) and (res_te.get("MDD (%)", 0.0) < -abs(max_mdd)):  # MDD는 음수
+            continue
+
+        row = {
+            # Train
+            "TR 수익률 (%)": res_tr.get("수익률 (%)"),
+            "TR 승률 (%)": res_tr.get("승률 (%)"),
+            "TR MDD (%)": res_tr.get("MDD (%)"),
+            "TR Profit Factor": res_tr.get("Profit Factor"),
+            "TR 총 매매 횟수": res_tr.get("총 매매 횟수"),
+            # Test
+            "수익률 (%)": res_te.get("수익률 (%)"),
+            "승률 (%)": res_te.get("승률 (%)"),
+            "MDD (%)": res_te.get("MDD (%)"),
+            "Profit Factor": res_te.get("Profit Factor"),
+            "총 매매 횟수": res_te.get("총 매매 횟수"),
+            # Params
+            "ma_buy": p["ma_buy"], "offset_ma_buy": p["offset_ma_buy"], "offset_cl_buy": p["offset_cl_buy"], "buy_operator": p["buy_operator"],
+            "ma_sell": p["ma_sell"], "offset_ma_sell": p["offset_ma_sell"], "offset_cl_sell": p["offset_cl_sell"], "sell_operator": p["sell_operator"],
+            "use_trend_in_buy": p["use_trend_in_buy"], "use_trend_in_sell": p["use_trend_in_sell"],
+            "ma_compare_short": p["ma_compare_short"], "ma_compare_long": p["ma_compare_long"],
+            "offset_compare_short": p["offset_compare_short"], "offset_compare_long": p["offset_compare_long"],
+            "stop_loss_pct": p.get("stop_loss_pct", 0.0), "take_profit_pct": p.get("take_profit_pct", 0.0),
+            "min_hold_days": p.get("min_hold_days", 0),
+        }
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        # 정렬
+        ascending = (objective_mode == "min")
+        df = df.sort_values(by=objective_metric, ascending=ascending, na_position="last").reset_index(drop=True)
+    return df
+################################################
+
 # ============== Page Setup & Header (UI only) ==============
 st.set_page_config(page_title="시그널 대시보드", page_icon="📊", layout="wide")
 colA, colB, colC, colD = st.columns([1.5,1,1,1])
@@ -1920,7 +2143,7 @@ with st.expander("⚙️ 체결/비용 & 기타 설정", expanded=False):
         random.seed(int(seed))
 
 # ================== 탭 ==================
-tab1, tab2, tab3 = st.tabs(["🎯 오늘 시그널", "📚 PRESETS 일괄", "🧪 백테스트"])
+tab1, tab2, tab3, tab4 = st.tabs(["🎯 오늘 시그널", "📚 PRESETS 일괄", "🧪 백테스트", "🎲 랜덤"])
 # ---------------- 공통 헬퍼 (탭들 위쪽 어딘가 1회만 정의해두면 좋음) ----------------
 def _safe_int(x, default=0):
     try:
@@ -2357,152 +2580,155 @@ with tab3:
             else:
                 st.warning("매매 로그가 비어 있습니다.")
 
+########
+with tab4:
+    # ── 랜덤 시뮬 / 자동 탐색 ──
+    with st.expander("🎲 랜덤 전략 시뮬레이션 실행", expanded=False):
+        colL, colR = st.columns(2)
+        with colL:
+            txt_offset_cl_buy     = st.text_input("offset_cl_buy 후보",     "1,5,15,25")
+            txt_buy_op            = st.text_input("buy_operator 후보",      ">,<")
+            txt_offset_ma_buy     = st.text_input("offset_ma_buy 후보",     "1,5,15,25")
+            txt_ma_buy            = st.text_input("ma_buy 후보",            "5,10,15,20,25")
 
-# ── 랜덤 시뮬 / 자동 탐색 ──
-with st.expander("🎲 랜덤 전략 시뮬레이션 실행", expanded=False):
-    colL, colR = st.columns(2)
-    with colL:
-        txt_offset_cl_buy     = st.text_input("offset_cl_buy 후보",     "1,5,15,25")
-        txt_buy_op            = st.text_input("buy_operator 후보",      ">,<")
-        txt_offset_ma_buy     = st.text_input("offset_ma_buy 후보",     "1,5,15,25")
-        txt_ma_buy            = st.text_input("ma_buy 후보",            "5,10,15,20,25")
+            txt_offset_cl_sell    = st.text_input("offset_cl_sell 후보",    "1,5,15,25")
+            txt_sell_op           = st.text_input("sell_operator 후보",     "<,>")
+            txt_offset_ma_sell    = st.text_input("offset_ma_sell 후보",    "1,5,15,25")
+            txt_ma_sell           = st.text_input("ma_sell 후보",           "5,10,15,20,25")
 
-        txt_offset_cl_sell    = st.text_input("offset_cl_sell 후보",    "1,5,15,25")
-        txt_sell_op           = st.text_input("sell_operator 후보",     "<,>")
-        txt_offset_ma_sell    = st.text_input("offset_ma_sell 후보",    "1,5,15,25")
-        txt_ma_sell           = st.text_input("ma_sell 후보",           "5,10,15,20,25")
+        with colR:
+            txt_off_cmp_s         = st.text_input("offset_compare_short 후보", "1,5,15,25")
+            txt_ma_cmp_s          = st.text_input("ma_compare_short 후보",     "5,10,15,20,25")
+            txt_off_cmp_l         = st.text_input("offset_compare_long 후보",  "1,5,15,25")
+            txt_ma_cmp_l          = st.text_input("ma_compare_long 후보",      "same")
 
-    with colR:
-        txt_off_cmp_s         = st.text_input("offset_compare_short 후보", "1,5,15,25")
-        txt_ma_cmp_s          = st.text_input("ma_compare_short 후보",     "5,10,15,20,25")
-        txt_off_cmp_l         = st.text_input("offset_compare_long 후보",  "1,5,15,25")
-        txt_ma_cmp_l          = st.text_input("ma_compare_long 후보",      "same")
+            txt_use_trend_buy     = st.text_input("use_trend_in_buy 후보(True/False)",  "True,False")
+            txt_use_trend_sell    = st.text_input("use_trend_in_sell 후보(True/False)", "True")
+            txt_stop_loss         = st.text_input("stop_loss_pct 후보(%)",  "0")
+            txt_take_profit       = st.text_input("take_profit_pct 후보(%)","0,10,30")
 
-        txt_use_trend_buy     = st.text_input("use_trend_in_buy 후보(True/False)",  "True,False")
-        txt_use_trend_sell    = st.text_input("use_trend_in_sell 후보(True/False)", "True")
-        txt_stop_loss         = st.text_input("stop_loss_pct 후보(%)",  "0")
-        txt_take_profit       = st.text_input("take_profit_pct 후보(%)","0,10,30")
+        n_simulations = st.number_input("시뮬레이션 횟수", value=100, min_value=1, step=10)
 
-    n_simulations = st.number_input("시뮬레이션 횟수", value=100, min_value=1, step=10)
+        # 현재 데이터(prepare_base) 미리 준비
+        signal_ticker = st.session_state.get("signal_ticker_input", "SOXL")
+        trade_ticker  = st.session_state.get("trade_ticker_input", "SOXL")
+        start_date    = st.session_state.get("start_date")
+        end_date      = st.session_state.get("end_date")
 
-    # 현재 데이터(prepare_base) 미리 준비
-    signal_ticker = st.session_state.get("signal_ticker_input", "SOXL")
-    trade_ticker  = st.session_state.get("trade_ticker_input", "SOXL")
-    start_date    = st.session_state.get("start_date")
-    end_date      = st.session_state.get("end_date")
+        ma_pool = [5, 10, 15, 20, 25, 50]
+        base, x_sig, x_trd, ma_dict_sig = prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool)
 
-    ma_pool = [5, 10, 15, 20, 25, 50]
-    base, x_sig, x_trd, ma_dict_sig = prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool)
+        if st.session_state.get("seed", 0):
+            random.seed(int(st.session_state["seed"]))
 
-    if st.session_state.get("seed", 0):
-        random.seed(int(st.session_state["seed"]))
+        choices_dict = {
+            "ma_buy":               _parse_list(txt_ma_buy, "int"),
+            "offset_ma_buy":        _parse_list(txt_offset_ma_buy, "int"),
+            "offset_cl_buy":        _parse_list(txt_offset_cl_buy, "int"),
+            "buy_operator":         _parse_list(txt_buy_op, "str"),
 
-    choices_dict = {
-        "ma_buy":               _parse_list(txt_ma_buy, "int"),
-        "offset_ma_buy":        _parse_list(txt_offset_ma_buy, "int"),
-        "offset_cl_buy":        _parse_list(txt_offset_cl_buy, "int"),
-        "buy_operator":         _parse_list(txt_buy_op, "str"),
+            "ma_sell":              _parse_list(txt_ma_sell, "int"),
+            "offset_ma_sell":       _parse_list(txt_offset_ma_sell, "int"),
+            "offset_cl_sell":       _parse_list(txt_offset_cl_sell, "int"),
+            "sell_operator":        _parse_list(txt_sell_op, "str"),
 
-        "ma_sell":              _parse_list(txt_ma_sell, "int"),
-        "offset_ma_sell":       _parse_list(txt_offset_ma_sell, "int"),
-        "offset_cl_sell":       _parse_list(txt_offset_cl_sell, "int"),
-        "sell_operator":        _parse_list(txt_sell_op, "str"),
+            "use_trend_in_buy":     _parse_list(txt_use_trend_buy, "bool"),
+            "use_trend_in_sell":    _parse_list(txt_use_trend_sell, "bool"),
 
-        "use_trend_in_buy":     _parse_list(txt_use_trend_buy, "bool"),
-        "use_trend_in_sell":    _parse_list(txt_use_trend_sell, "bool"),
+            "ma_compare_short":     _parse_list(txt_ma_cmp_s, "int"),
+            "ma_compare_long":      _parse_list(txt_ma_cmp_l, "int"),
+            "offset_compare_short": _parse_list(txt_off_cmp_s, "int"),
+            "offset_compare_long":  _parse_list(txt_off_cmp_l, "int"),
 
-        "ma_compare_short":     _parse_list(txt_ma_cmp_s, "int"),
-        "ma_compare_long":      _parse_list(txt_ma_cmp_l, "int"),
-        "offset_compare_short": _parse_list(txt_off_cmp_s, "int"),
-        "offset_compare_long":  _parse_list(txt_off_cmp_l, "int"),
+            "stop_loss_pct":        _parse_list(txt_stop_loss, "float"),
+            "take_profit_pct":      _parse_list(txt_take_profit, "float"),
+        }
 
-        "stop_loss_pct":        _parse_list(txt_stop_loss, "float"),
-        "take_profit_pct":      _parse_list(txt_take_profit, "float"),
-    }
-
-    if st.button("🧪 랜덤 전략 시뮬레이션 실행", use_container_width=True, key="btn_randrun"):
-        if base is None or len(base) == 0:
-            st.warning("데이터가 부족합니다. 기간/티커를 확인하세요.")
-        else:
-            df_sim = run_random_simulations_fast(
-                int(n_simulations), base, x_sig, x_trd, ma_dict_sig,
-                initial_cash=_safe_int(st.session_state.get("initial_cash", 5_000_000)),
-                fee_bps=_safe_int(st.session_state.get("fee_bps", 25)),
-                slip_bps=_safe_int(st.session_state.get("slip_bps", 0)),
-                choices_dict=choices_dict,
-                strategy_behavior=st.session_state.get("strategy_behavior", "1. 포지션 없으면 매수 / 보유 중이면 매도"),
-                min_hold_days=_safe_int(st.session_state.get("min_hold_days", 0))
-            )
-            if df_sim.empty:
-                st.warning("유효한 결과가 없습니다. 후보군/횟수를 조정하세요.")
+        if st.button("🧪 랜덤 전략 시뮬레이션 실행", use_container_width=True, key="btn_randrun"):
+            if base is None or len(base) == 0:
+                st.warning("데이터가 부족합니다. 기간/티커를 확인하세요.")
             else:
-                st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
-                st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True), use_container_width=True)
-                st.download_button("⬇️ 결과 다운로드 (CSV)",
-                                   data=df_sim.to_csv(index=False).encode("utf-8-sig"),
-                                   file_name="random_sim_results.csv", mime="text/csv",
-                                   key="dl_rand_csv")
+                df_sim = run_random_simulations_fast(
+                    int(n_simulations), base, x_sig, x_trd, ma_dict_sig,
+                    initial_cash=_safe_int(st.session_state.get("initial_cash", 5_000_000)),
+                    fee_bps=_safe_int(st.session_state.get("fee_bps", 25)),
+                    slip_bps=_safe_int(st.session_state.get("slip_bps", 0)),
+                    choices_dict=choices_dict,
+                    strategy_behavior=st.session_state.get("strategy_behavior", "1. 포지션 없으면 매수 / 보유 중이면 매도"),
+                    min_hold_days=_safe_int(st.session_state.get("min_hold_days", 0))
+                )
+                if df_sim.empty:
+                    st.warning("유효한 결과가 없습니다. 후보군/횟수를 조정하세요.")
+                else:
+                    st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
+                    st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True), use_container_width=True)
+                    st.download_button("⬇️ 결과 다운로드 (CSV)",
+                                       data=df_sim.to_csv(index=False).encode("utf-8-sig"),
+                                       file_name="random_sim_results.csv", mime="text/csv",
+                                       key="dl_rand_csv")
 
-with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False):
-    st.markdown("""
+    with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False):
+        st.markdown("""
 - 아래 후보군을 토대로 **랜덤 탐색**을 수행합니다.  
 - 기간을 **Train/Test로 분할**하여 **일반화 성능**을 같이 확인합니다.  
 - 제약조건(최소 매매 횟수, 최소 승률, 최대 MDD)으로 필터링 후,  
   선택한 **목표 지표(Test)** 기준으로 정렬합니다.
 """)
 
-    colA, colB = st.columns(2)
-    with colA:
-        split_ratio = st.slider("Train 비중 (나머지 Test)", min_value=0.5, max_value=0.9, value=0.7, step=0.05, key="split_ratio")
-        objective_metric = st.selectbox("목표 지표", ["수익률 (%)", "승률 (%)", "샤프", "Profit Factor", "MDD (%)"], index=0, key="obj_metric")
-        objective_mode = "min" if objective_metric == "MDD (%)" else "max"
-        n_trials = st.number_input("탐색 시도 횟수 (랜덤)", value=200, min_value=20, step=20, key="n_trials")
-        topn_show = st.number_input("상위 N개만 표시", value=10, min_value=5, step=5, key="topn_show")
-    with colB:
-        min_trades = st.number_input("제약: 최소 매매 횟수", value=5, min_value=0, step=1, key="min_trades")
-        min_winrate = st.number_input("제약: 최소 승률(%)", value=55.0, step=1.0, key="min_winrate")
-        max_mdd_in = st.number_input("제약: 최대 MDD(%) (0=미적용)", value=0.0, step=1.0, key="max_mdd_input")
-        max_mdd = None if max_mdd_in == 0.0 else float(max_mdd_in)
+        colA, colB = st.columns(2)
+        with colA:
+            split_ratio = st.slider("Train 비중 (나머지 Test)", min_value=0.5, max_value=0.9, value=0.7, step=0.05, key="split_ratio")
+            objective_metric = st.selectbox("목표 지표", ["수익률 (%)", "승률 (%)", "샤프", "Profit Factor", "MDD (%)"], index=0, key="obj_metric")
+            objective_mode = "min" if objective_metric == "MDD (%)" else "max"
+            n_trials = st.number_input("탐색 시도 횟수 (랜덤)", value=200, min_value=20, step=20, key="n_trials")
+            topn_show = st.number_input("상위 N개만 표시", value=10, min_value=5, step=5, key="topn_show")
+        with colB:
+            min_trades = st.number_input("제약: 최소 매매 횟수", value=5, min_value=0, step=1, key="min_trades")
+            min_winrate = st.number_input("제약: 최소 승률(%)", value=55.0, step=1.0, key="min_winrate")
+            max_mdd_in = st.number_input("제약: 최대 MDD(%) (0=미적용)", value=0.0, step=1.0, key="max_mdd_input")
+            max_mdd = None if max_mdd_in == 0.0 else float(max_mdd_in)
 
-    # 후보군은 위 랜덤 섹션과 동일 입력을 재사용
-    choices_dict_auto = choices_dict  # 동일 객체 사용
+        # 후보군은 위 랜덤 섹션과 동일 입력을 재사용
+        choices_dict_auto = choices_dict  # 동일 객체 사용
 
-    if st.button("🚀 자동 탐색 실행 (Train/Test)", use_container_width=True, key="btn_auto_search"):
-        df_auto = auto_search_train_test(
-            signal_ticker=signal_ticker, trade_ticker=trade_ticker,
-            start_date=start_date, end_date=end_date,
-            split_ratio=float(split_ratio),
-            choices_dict=choices_dict_auto,
-            n_trials=int(n_trials),
-            objective_metric=objective_metric,
-            objective_mode=objective_mode,
-            initial_cash=_safe_int(st.session_state.get("initial_cash", 5_000_000)),
-            fee_bps=_safe_int(st.session_state.get("fee_bps", 25)),
-            slip_bps=_safe_int(st.session_state.get("slip_bps", 0)),
-            strategy_behavior=st.session_state.get("strategy_behavior", "1. 포지션 없으면 매수 / 보유 중이면 매도"),
-            min_hold_days=_safe_int(st.session_state.get("min_hold_days", 0)),
-            execution_lag_days=1,
-            execution_price_mode="next_close",
-            constraints={"min_trades": int(min_trades), "min_winrate": float(min_winrate), "max_mdd": max_mdd}
-        )
+        if st.button("🚀 자동 탐색 실행 (Train/Test)", use_container_width=True, key="btn_auto_search"):
+            df_auto = auto_search_train_test(
+                signal_ticker=signal_ticker, trade_ticker=trade_ticker,
+                start_date=start_date, end_date=end_date,
+                split_ratio=float(split_ratio),
+                choices_dict=choices_dict_auto,
+                n_trials=int(n_trials),
+                objective_metric=objective_metric,
+                objective_mode=objective_mode,
+                initial_cash=_safe_int(st.session_state.get("initial_cash", 5_000_000)),
+                fee_bps=_safe_int(st.session_state.get("fee_bps", 25)),
+                slip_bps=_safe_int(st.session_state.get("slip_bps", 0)),
+                strategy_behavior=st.session_state.get("strategy_behavior", "1. 포지션 없으면 매수 / 보유 중이면 매도"),
+                min_hold_days=_safe_int(st.session_state.get("min_hold_days", 0)),
+                execution_lag_days=1,
+                execution_price_mode="next_close",
+                constraints={"min_trades": int(min_trades), "min_winrate": float(min_winrate), "max_mdd": max_mdd}
+            )
 
-        if df_auto.empty:
-            st.warning("조건을 만족하는 결과가 없거나 데이터가 부족합니다. 후보군/제약/기간을 조정해 보세요.")
-        else:
-            st.subheader(f"🏆 자동 탐색 결과 (상위 {int(topn_show)}개, Test {objective_metric} 기준 정렬)")
-            st.dataframe(df_auto.head(int(topn_show)), use_container_width=True)
-            st.download_button("⬇️ 자동 탐색 결과 다운로드 (CSV)",
-                               data=df_auto.to_csv(index=False).encode("utf-8-sig"),
-                               file_name="auto_search_train_test.csv", mime="text/csv",
-                               key="dl_auto_csv")
+            if df_auto.empty:
+                st.warning("조건을 만족하는 결과가 없거나 데이터가 부족합니다. 후보군/제약/기간을 조정해 보세요.")
+            else:
+                st.subheader(f"🏆 자동 탐색 결과 (상위 {int(topn_show)}개, Test {objective_metric} 기준 정렬)")
+                st.dataframe(df_auto.head(int(topn_show)), use_container_width=True)
+                st.download_button("⬇️ 자동 탐색 결과 다운로드 (CSV)",
+                                   data=df_auto.to_csv(index=False).encode("utf-8-sig"),
+                                   file_name="auto_search_train_test.csv", mime="text/csv",
+                                   key="dl_auto_csv")
 
-            with st.expander("🔥 베스트 파라미터 1개 즉시 적용(선택)", expanded=False):
-                best = df_auto.iloc[0].to_dict()
-                st.write({k: best.get(k) for k in [
-                    "ma_buy","offset_ma_buy","offset_cl_buy","buy_operator",
-                    "ma_sell","offset_ma_sell","offset_cl_sell","sell_operator",
-                    "use_trend_in_buy","use_trend_in_sell",
-                    "ma_compare_short","ma_compare_long",
-                    "offset_compare_short","offset_compare_long",
-                    "stop_loss_pct","take_profit_pct","min_hold_days"
-                ]})
+                with st.expander("🔥 베스트 파라미터 1개 즉시 적용(선택)", expanded=False):
+                    best = df_auto.iloc[0].to_dict()
+                    st.write({k: best.get(k) for k in [
+                        "ma_buy","offset_ma_buy","offset_cl_buy","buy_operator",
+                        "ma_sell","offset_ma_sell","offset_cl_sell","sell_operator",
+                        "use_trend_in_buy","use_trend_in_sell",
+                        "ma_compare_short","ma_compare_long",
+                        "offset_compare_short","offset_compare_long",
+                        "stop_loss_pct","take_profit_pct","min_hold_days"
+                    ]})
+
+
