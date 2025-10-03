@@ -11,6 +11,36 @@ from functools import lru_cache
 import numpy as np
 import random
 import re
+import inspect
+
+def _call_backtest_fast_safe(
+    base, x_sig, x_trd, ma_dict_sig,
+    ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
+    offset_cl_buy, offset_cl_sell,
+    ma_compare_short, ma_compare_long,
+    offset_compare_short, offset_compare_long,
+    **kwargs,  # 여기에 initial_cash, fee_bps 등도 들어옴
+):
+    """
+    backtest_fast가 실제로 지원하는 파라미터만 추려서 안전하게 호출.
+    """
+    sig = inspect.signature(backtest_fast)
+    allowed = set(sig.parameters.keys())
+
+    # 위치 인자(필수 13개)는 그대로 넘기고,
+    # 키워드 인자는 허용되는 것만 필터링
+    kw = {k: v for k, v in kwargs.items() if k in allowed}
+
+    return backtest_fast(
+        base, x_sig, x_trd, ma_dict_sig,
+        ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
+        offset_cl_buy, offset_cl_sell,
+        ma_compare_short, ma_compare_long,
+        offset_compare_short, offset_compare_long,
+        **kw
+    )
+
+
 
 # ===== 랜덤 시뮬/자동 탐색 헬퍼 =====
 import random
@@ -74,24 +104,24 @@ def run_random_simulations_fast(
     for i in range(int(n_simulations)):
         p = _sample_params(choices_dict, base_params)
         # backtest 실행
-        res = backtest_fast(
-            base, x_sig, x_trd, ma_dict_sig,
-            p["ma_buy"], p["offset_ma_buy"], p["ma_sell"], p["offset_ma_sell"],
-            p["offset_cl_buy"], p["offset_cl_sell"],
-            (p["ma_compare_short"] if (p.get("ma_compare_short") or 0) > 0 else None),
-            (p["ma_compare_long"]  if (p.get("ma_compare_long")  or 0) > 0 else None),
-            p["offset_compare_short"], p["offset_compare_long"],
-            initial_cash=initial_cash, fee_bps=fee_bps, slip_bps=slip_bps,
-            stop_loss_pct=p.get("stop_loss_pct", 0.0), take_profit_pct=p.get("take_profit_pct", 0.0),
-            use_trend_in_buy=p.get("use_trend_in_buy", True),
-            use_trend_in_sell=p.get("use_trend_in_sell", False),
-            buy_operator=p.get("buy_operator", ">"),
-            sell_operator=p.get("sell_operator", "<"),
-            strategy_behavior=strategy_behavior,
-            min_hold_days=min_hold_days,
-            execution_lag_days=1,
-            execution_price_mode="next_close",
-        )
+        res = _call_backtest_fast_safe(base, x_sig, x_trd, ma_dict_sig,
+    p["ma_buy"], p["offset_ma_buy"], p["ma_sell"], p["offset_ma_sell"],
+    p["offset_cl_buy"], p["offset_cl_sell"],
+    (p["ma_compare_short"] if (p.get("ma_compare_short") or 0) > 0 else None),
+    (p["ma_compare_long"]  if (p.get("ma_compare_long")  or 0) > 0 else None),
+    p["offset_compare_short"], p["offset_compare_long"],
+    # 아래부터는 키워드 — 네 backtest_fast가 받는 것만 자동 필터됨
+    initial_cash=initial_cash, fee_bps=fee_bps, slip_bps=slip_bps,
+    stop_loss_pct=p.get("stop_loss_pct", 0.0), take_profit_pct=p.get("take_profit_pct", 0.0),
+    use_trend_in_buy=p.get("use_trend_in_buy", True),
+    use_trend_in_sell=p.get("use_trend_in_sell", False),
+    buy_operator=p.get("buy_operator", ">"),
+    sell_operator=p.get("sell_operator", "<"),
+    strategy_behavior=strategy_behavior,   # 없다면 자동 필터
+    min_hold_days=min_hold_days,           # 없다면 자동 필터
+    execution_lag_days=1,                  # 없다면 자동 필터
+    execution_price_mode="next_close",     # 없다면 자동 필터
+                                      )
         if not res:
             continue
         rows.append({
@@ -148,46 +178,44 @@ def auto_search_train_test(
         p = _sample_params(choices_dict, base_params)
 
         # train
-        res_tr = backtest_fast(
-            base_tr, x_sig_tr, x_trd_tr, ma_dict_tr,
-            p["ma_buy"], p["offset_ma_buy"], p["ma_sell"], p["offset_ma_sell"],
-            p["offset_cl_buy"], p["offset_cl_sell"],
-            (p["ma_compare_short"] if (p.get("ma_compare_short") or 0) > 0 else None),
-            (p["ma_compare_long"]  if (p.get("ma_compare_long")  or 0) > 0 else None),
-            p["offset_compare_short"], p["offset_compare_long"],
-            initial_cash=initial_cash, fee_bps=fee_bps, slip_bps=slip_bps,
-            stop_loss_pct=p.get("stop_loss_pct", 0.0), take_profit_pct=p.get("take_profit_pct", 0.0),
-            use_trend_in_buy=p.get("use_trend_in_buy", True),
-            use_trend_in_sell=p.get("use_trend_in_sell", False),
-            buy_operator=p.get("buy_operator", ">"),
-            sell_operator=p.get("sell_operator", "<"),
-            strategy_behavior=strategy_behavior,
-            min_hold_days=min_hold_days,
-            execution_lag_days=execution_lag_days,
-            execution_price_mode=execution_price_mode,
-        )
+        res_tr = _call_backtest_fast_safe(base_tr, x_sig_tr, x_trd_tr, ma_dict_tr,
+    p["ma_buy"], p["offset_ma_buy"], p["ma_sell"], p["offset_ma_sell"],
+    p["offset_cl_buy"], p["offset_cl_sell"],
+    (p["ma_compare_short"] if (p.get("ma_compare_short") or 0) > 0 else None),
+    (p["ma_compare_long"]  if (p.get("ma_compare_long")  or 0) > 0 else None),
+    p["offset_compare_short"], p["offset_compare_long"],
+    initial_cash=initial_cash, fee_bps=fee_bps, slip_bps=slip_bps,
+    stop_loss_pct=p.get("stop_loss_pct", 0.0), take_profit_pct=p.get("take_profit_pct", 0.0),
+    use_trend_in_buy=p.get("use_trend_in_buy", True),
+    use_trend_in_sell=p.get("use_trend_in_sell", False),
+    buy_operator=p.get("buy_operator", ">"),
+    sell_operator=p.get("sell_operator", "<"),
+    strategy_behavior=strategy_behavior,
+    min_hold_days=min_hold_days,
+    execution_lag_days=execution_lag_days,
+    execution_price_mode=execution_price_mode
+                                         )
         if not res_tr:
             continue
 
         # test
-        res_te = backtest_fast(
-            base_te, x_sig_te, x_trd_te, ma_dict_te,
-            p["ma_buy"], p["offset_ma_buy"], p["ma_sell"], p["offset_ma_sell"],
-            p["offset_cl_buy"], p["offset_cl_sell"],
-            (p["ma_compare_short"] if (p.get("ma_compare_short") or 0) > 0 else None),
-            (p["ma_compare_long"]  if (p.get("ma_compare_long")  or 0) > 0 else None),
-            p["offset_compare_short"], p["offset_compare_long"],
-            initial_cash=initial_cash, fee_bps=fee_bps, slip_bps=slip_bps,
-            stop_loss_pct=p.get("stop_loss_pct", 0.0), take_profit_pct=p.get("take_profit_pct", 0.0),
-            use_trend_in_buy=p.get("use_trend_in_buy", True),
-            use_trend_in_sell=p.get("use_trend_in_sell", False),
-            buy_operator=p.get("buy_operator", ">"),
-            sell_operator=p.get("sell_operator", "<"),
-            strategy_behavior=strategy_behavior,
-            min_hold_days=min_hold_days,
-            execution_lag_days=execution_lag_days,
-            execution_price_mode=execution_price_mode,
-        )
+        res_te = _call_backtest_fast_safe(base_te, x_sig_te, x_trd_te, ma_dict_te,
+    p["ma_buy"], p["offset_ma_buy"], p["ma_sell"], p["offset_ma_sell"],
+    p["offset_cl_buy"], p["offset_cl_sell"],
+    (p["ma_compare_short"] if (p.get("ma_compare_short") or 0) > 0 else None),
+    (p["ma_compare_long"]  if (p.get("ma_compare_long")  or 0) > 0 else None),
+    p["offset_compare_short"], p["offset_compare_long"],
+    initial_cash=initial_cash, fee_bps=fee_bps, slip_bps=slip_bps,
+    stop_loss_pct=p.get("stop_loss_pct", 0.0), take_profit_pct=p.get("take_profit_pct", 0.0),
+    use_trend_in_buy=p.get("use_trend_in_buy", True),
+    use_trend_in_sell=p.get("use_trend_in_sell", False),
+    buy_operator=p.get("buy_operator", ">"),
+    sell_operator=p.get("sell_operator", "<"),
+    strategy_behavior=strategy_behavior,
+    min_hold_days=min_hold_days,
+    execution_lag_days=execution_lag_days,
+    execution_price_mode=execution_price_mode
+                                         )
         if not res_te:
             continue
 
@@ -2730,5 +2758,6 @@ with tab4:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
