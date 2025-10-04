@@ -1524,10 +1524,6 @@ st.title("📊 전략 백테스트 웹앱")
 st.markdown("모든 매매는 종가 매매이나, 손절,익절은 장중 시가. n일전 데이터 기반으로 금일 종가 매매를 한다.")
 st.markdown("KODEX미국반도체 390390, KODEX200 069500 KDOEX인버스 114800, KODEX미국나스닥100 379810, ACEKRX금현물 411060, KODEX은선물 114800, ACE미국30년국채액티브(H) 453850, ACE미국빅테크TOP7Plus 465580")
 
-# 최초 1회 기본값 세팅
-if "init_done" not in st.session_state:
-    _apply_preset_to_state("직접 설정")
-    st.session_state["init_done"] = True
 
 def _on_change_preset():
     _apply_preset_to_state(st.session_state["selected_preset"])
@@ -2197,6 +2193,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
