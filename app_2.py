@@ -2079,48 +2079,13 @@ with tab3:
                 })
                 buy_cache = None
 
-max_consec_loss = 0; cur=0
-
-# result는 백테스트 호출 결과라고 가정
-# 예: result = backtest_fast(...)
-
-def _extract_trade_returns(result):
-    """
-    다양한 반환 형태를 안전하게 흡수해서 trade_returns(list[float])로 통일.
-    원소는 '비율(±0.x)' 또는 '퍼센트(±x%)' 중 하나여도 무방.
-    """
-    # 1) 이미 제공되면 그대로
-    tr = result.get("trade_returns")
-    if isinstance(tr, (list, tuple, np.ndarray)) and len(tr) > 0:
-        return [float(x) for x in tr]
-
-    # 2) trades에서 추론 (list[dict] 또는 DataFrame)
-    trades = result.get("trades") or result.get("trade_log") or []
-    # DataFrame인 경우
-    if hasattr(trades, "columns"):
-        for col in ["pnl_pct", "ret_pct", "return_pct", "ret"]:
-            if col in trades.columns:
-                return [float(x) for x in trades[col].tolist()]
-        if {"pnl", "buy_px"} <= set(trades.columns):
-            return (trades["pnl"] / trades["buy_px"]).astype(float).tolist()
-        return []
-    # list[dict]인 경우
-    if isinstance(trades, list) and trades:
-        probe = trades[0]
-        for key in ["pnl_pct", "ret_pct", "return_pct", "ret"]:
-            if key in probe:
-                return [float(t.get(key, 0.0)) for t in trades]
-        if ("pnl" in probe) and ("buy_px" in probe):
-            return [float(t["pnl"])/float(t["buy_px"]) if float(t["buy_px"]) != 0 else 0.0 for t in trades]
-    return []
-
-trade_returns = _extract_trade_returns(result)
-
-
-for r in trade_returns:
-    if r < 0: cur += 1; max_consec_loss = max(max_consec_loss, cur)
-    else: cur = 0
-mar = (summary_cagr / abs(mdd)) if mdd != 0 else np.inf
+        max_consec_loss = 0; cur=0
+        trade_returns = _extract_trade_returns(result)
+        
+        for r in trade_returns:
+            if r < 0: cur += 1; max_consec_loss = max(max_consec_loss, cur)
+            else: cur = 0
+        mar = (summary_cagr / abs(mdd)) if mdd != 0 else np.inf
 
 
         if pairs:
@@ -2289,6 +2254,7 @@ mar = (summary_cagr / abs(mdd)) if mdd != 0 else np.inf
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
