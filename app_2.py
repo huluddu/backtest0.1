@@ -2417,23 +2417,12 @@ with tab2:
 # TAB3: 백테스트
 # ───────────────────────────────────────
 with tab3:
-    # 최신 값
-    signal_ticker = st.session_state.get("signal_ticker_input", "SOXL")
-    trade_ticker  = st.session_state.get("trade_ticker_input", "SOXL")
-    start_date    = st.session_state.get("start_date")
-    end_date      = st.session_state.get("end_date")
-    params        = _current_params_from_state()
-    initial_cash_ui = _safe_int(st.session_state.get("initial_cash", st.session_state.get("initial_cash_ui", 5_000_000)) or 5_000_000)
-    fee_bps       = _safe_int(st.session_state.get("fee_bps", 25))
-    slip_bps      = _safe_int(st.session_state.get("slip_bps", 0))
-    seed          = _safe_int(st.session_state.get("seed", 0))
-
     # 실행 버튼
-    if st.button("✅ 백테스트 실행", use_container_width=True, key="btn_bt_run"):
+    if st.button("✅ 백테스트 실행", use_container_width=True):
         # 1) MA 풀 구성
-        ma_pool = [params["ma_buy"], params["ma_sell"]]
-        if params["ma_compare_short"]: ma_pool.append(params["ma_compare_short"])
-        if params["ma_compare_long"]:  ma_pool.append(params["ma_compare_long"])
+        ma_pool = [ma_buy, ma_sell]
+        if (ma_compare_short or 0) > 0: ma_pool.append(ma_compare_short)
+        if (ma_compare_long  or 0) > 0: ma_pool.append(ma_compare_long)
 
         # 2) 기준 DF + MA 사전계산
         base, x_sig, x_trd, ma_dict_sig = prepare_base(
@@ -2443,19 +2432,20 @@ with tab3:
         # 3) 백테스트 실행
         result = backtest_fast(
             base, x_sig, x_trd, ma_dict_sig,
-            params["ma_buy"], params["offset_ma_buy"], params["ma_sell"], params["offset_ma_sell"],
-            params["offset_cl_buy"], params["offset_cl_sell"],
-            params["ma_compare_short"], params["ma_compare_long"],
-            params["offset_compare_short"], params["offset_compare_long"],
+            ma_buy, offset_ma_buy, ma_sell, offset_ma_sell,
+            offset_cl_buy, offset_cl_sell,
+            ma_compare_short if (ma_compare_short or 0) > 0 else None,
+            ma_compare_long  if (ma_compare_long  or 0) > 0 else None,
+            offset_compare_short, offset_compare_long,
             initial_cash=initial_cash_ui,
-            stop_loss_pct=params["stop_loss_pct"], take_profit_pct=params["take_profit_pct"],
-            min_hold_days=params["min_hold_days"],
-            strategy_behavior=params["strategy_behavior"],
+            stop_loss_pct=stop_loss_pct, take_profit_pct=take_profit_pct,
+            min_hold_days=min_hold_days,
+            strategy_behavior=strategy_behavior,
             fee_bps=fee_bps, slip_bps=slip_bps,
-            use_trend_in_buy=params["use_trend_in_buy"],
-            use_trend_in_sell=params["use_trend_in_sell"],
-            buy_operator=params["buy_operator"],
-            sell_operator=params["sell_operator"],
+            use_trend_in_buy=use_trend_in_buy,
+            use_trend_in_sell=use_trend_in_sell,
+            buy_operator=buy_operator,
+            sell_operator=sell_operator,
             execution_lag_days=1,
             execution_price_mode="next_close"
         )
@@ -2472,146 +2462,229 @@ with tab3:
             colD.metric("MDD", f"{summary.get('MDD (%)', 0)}%")
 
             df_log = pd.DataFrame(result["매매 로그"])
-            if not df_log.empty and "날짜" in df_log.columns:
-                df_log["날짜"] = pd.to_datetime(df_log["날짜"])
-                df_log.set_index("날짜", inplace=True)
+            df_log["날짜"] = pd.to_datetime(df_log["날짜"])
+            df_log.set_index("날짜", inplace=True)
 
-                # 성과지표 보강
-                if "자산" in df_log.columns:
-                    eq = df_log["자산"].pct_change().dropna()
-                    if not eq.empty:
-                        ann_ret = (1 + eq.mean()) ** 252 - 1
-                        ann_vol = eq.std() * (252 ** 0.5)
-                        sharpe = (ann_ret / ann_vol) if ann_vol > 0 else 0.0
-                    else:
-                        ann_ret = ann_vol = sharpe = 0.0
-                else:
-                    ann_ret = ann_vol = sharpe = 0.0
-
-                st.write({
-                    "연율화 수익률 CAGR(%)": round(ann_ret * 100, 2),
-                    "평균 거래당 수익률(%)": result.get("평균 거래당 수익률 (%)", 0.0),
-                    "ProfitFactor": result.get("Profit Factor", 0.0),
-                    "연율화 변동성(%)": round(ann_vol * 100, 2),
-                    "샤프": round(sharpe, 2),
-                })
-
-                # 그래프
-                fig = go.Figure()
-
-                # 벤치마크 (Buy&Hold)
-                if "종가" in df_log.columns and not df_log["종가"].isna().all():
-                    bench = initial_cash_ui * (df_log["종가"] / df_log["종가"].iloc[0])
-                    bh_ret = round((bench.iloc[-1] - initial_cash_ui) / initial_cash_ui * 100, 2)
-                    fig.add_trace(go.Scatter(
-                        x=df_log.index, y=bench, mode="lines", name="Benchmark", yaxis="y1", line=dict(dash="dot")
-                    ))
-                else:
-                    bh_ret = 0.0
-
-                # 자산 곡선 (왼쪽 y축)
-                if "자산" in df_log.columns:
-                    fig.add_trace(go.Scatter(
-                        x=df_log.index, y=df_log["자산"], mode="lines", name="Asset", yaxis="y1"
-                    ))
-
-                # 종가 (오른쪽 y축)
-                if "종가" in df_log.columns:
-                    fig.add_trace(go.Scatter(
-                        x=df_log.index, y=df_log["종가"], mode="lines", name="Price", yaxis="y2"
-                    ))
-                    # ✅ 20MA 추가
-                    df_log["MA20"] = df_log["종가"].rolling(20).mean()
-                    fig.add_trace(go.Scatter(
-                        x=df_log.index, y=df_log["MA20"], mode="lines", name="20일 MA", yaxis="y2",
-                        line=dict(dash="dash")
-                    ))
-
-                # 보유 구간 음영
-                if "신호" in df_log.columns:
-                    pos_step = df_log["신호"].map({"BUY": 1, "SELL": -1}).fillna(0).cumsum()
-                    in_pos = pos_step > 0
-                    if "자산" in df_log.columns:
-                        pos_asset = df_log["자산"].where(in_pos)
-                        fig.add_trace(go.Scatter(
-                            x=df_log.index, y=pos_asset, mode="lines", name="In-Position", yaxis="y1",
-                            line=dict(width=0), fill="tozeroy", fillcolor="rgba(0,150,0,0.08)",
-                            hoverinfo="skip", showlegend=False
-                        ))
-
-                    # 매수/매도 마커
-                    buy_points = df_log[df_log["신호"] == "BUY"]
-                    sell_points = df_log[df_log["신호"] == "SELL"]
-
-                    fig.add_trace(go.Scatter(
-                        x=buy_points.index, y=buy_points.get("종가"), mode="markers", name="BUY", yaxis="y2",
-                        marker=dict(symbol="triangle-up", size=6)
-                    ))
-                    fig.add_trace(go.Scatter(
-                        x=sell_points.index, y=sell_points.get("종가"), mode="markers", name="SELL", yaxis="y2",
-                        marker=dict(symbol="triangle-down", size=6)
-                    ))
-
-                    # 동시 만족(양시그널) 보조 — 없을 수도 있으니 안전 처리
-                    if "양시그널" in df_log.columns:
-                        both_buy = buy_points[buy_points["양시그널"] == True]
-                        both_sell = sell_points[sell_points["양시그널"] == True]
-                        fig.add_trace(go.Scatter(
-                            x=both_buy.index, y=both_buy.get("종가"), mode="markers", name="BUY (양시그널)", yaxis="y2",
-                            marker=dict(symbol="triangle-up", size=9, line=dict(width=2))
-                        ))
-                        fig.add_trace(go.Scatter(
-                            x=both_sell.index, y=both_sell.get("종가"), mode="markers", name="SELL (양시그널)", yaxis="y2",
-                            marker=dict(symbol="triangle-down", size=9, line=dict(width=2))
-                        ))
-
-                fig.update_layout(
-                    title=f"📈 자산 & 종가 흐름 (BUY/SELL 시점 포함) — 벤치마크 수익률 {bh_ret}%",
-                    yaxis=dict(title="Asset"),
-                    yaxis2=dict(title="Price", overlaying="y", side="right"),
-                    hovermode="x unified",
-                    height=800, margin=dict(l=10, r=10, t=40, b=10)
-                )
-                st.plotly_chart(fig, use_container_width=True)
-
-                # 트레이드 페어 요약
-                pairs, buy_cache = [], None
-                for _, r in df_log.reset_index().iterrows():
-                    if r.get("신호") == "BUY":
-                        buy_cache = r
-                    elif r.get("신호") == "SELL" and buy_cache is not None:
-                        pb = buy_cache.get("체결가") if pd.notna(buy_cache.get("체결가", np.nan)) else buy_cache.get("종가")
-                        ps = r.get("체결가") if pd.notna(r.get("체결가", np.nan)) else r.get("종가")
-                        if pd.notna(pb) and pd.notna(ps):
-                            pnl = (ps - pb) / pb * 100
-                            pairs.append({
-                                "진입일": buy_cache.name.strftime("%Y-%m-%d"),
-                                "청산일": r.name.strftime("%Y-%m-%d"),
-                                "진입가(체결가)": round(pb, 4),
-                                "청산가(체결가)": round(ps, 4),
-                                "보유일": r.get("보유일"),
-                                "수익률(%)": round(pnl, 2),
-                                "청산이유": "손절" if r.get("손절발동") else ("익절" if r.get("익절발동") else "규칙매도")
-                            })
-                        buy_cache = None
-
-                if pairs:
-                    st.subheader("🧾 트레이드 요약 (체결가 기준)")
-                    st.dataframe(pd.DataFrame(pairs), use_container_width=True)
-
-                with st.expander("🧾 매매 로그"):
-                    st.dataframe(df_log, use_container_width=True)
-                csv = df_log.reset_index().to_csv(index=False).encode("utf-8-sig")
-                st.download_button("⬇️ 백테스트 결과 다운로드 (CSV)", data=csv,
-                                   file_name="backtest_result.csv", mime="text/csv",
-                                   key="dl_bt_csv")
+            # 성과지표 보강
+            eq = df_log["자산"].pct_change().dropna()
+            if not eq.empty:
+                ann_ret = (1 + eq.mean()) ** 252 - 1
+                ann_vol = eq.std() * (252 ** 0.5)
+                sharpe = (ann_ret / ann_vol) if ann_vol > 0 else 0.0
             else:
-                st.warning("매매 로그가 비어 있습니다.")
+                ann_ret = ann_vol = sharpe = 0.0
+
+            st.write({
+                "연율화 수익률 CAGR(%)": round(ann_ret * 100, 2),
+                "평균 거래당 수익률(%)": result.get("평균 거래당 수익률 (%)", 0.0),
+                "ProfitFactor": result.get("Profit Factor", 0.0),
+                "연율화 변동성(%)": round(ann_vol * 100, 2),
+                "샤프": round(sharpe, 2),
+            })
+
+  ############그래프##############
+        fig = go.Figure()
+
+        # 벤치마크 (Buy&Hold)
+        bench = initial_cash_ui * (df_log["종가"] / df_log["종가"].iloc[0])
+        bh_ret = round((bench.iloc[-1] - initial_cash_ui) / initial_cash_ui * 100, 2)
+
+        fig.add_trace(go.Scatter(
+            x=df_log.index,
+            y=bench,
+            mode="lines",
+            name="Benchmark",
+            yaxis="y1",
+            line=dict(dash="dot")
+        ))
+
+        # 자산 곡선 (왼쪽 y축)
+        fig.add_trace(go.Scatter(
+            x=df_log.index,
+            y=df_log["자산"],
+            mode="lines",
+            name="Asset",
+            yaxis="y1"
+        ))
+
+        # 보유 구간 배경 음영
+        pos_step = df_log["신호"].map({"BUY": 1, "SELL": -1}).fillna(0).cumsum()
+        in_pos = pos_step > 0
+        pos_asset = df_log["자산"].where(in_pos)
+        fig.add_trace(go.Scatter(
+            x=df_log.index,
+            y=pos_asset,
+            mode="lines",
+            name="In-Position",
+            yaxis="y1",
+            line=dict(width=0),
+            fill="tozeroy",
+            fillcolor="rgba(0,150,0,0.08)",
+            hoverinfo="skip",
+            showlegend=False
+        ))
+
+        # 종가 (오른쪽 y축)
+        fig.add_trace(go.Scatter(
+            x=df_log.index,
+            y=df_log["종가"],
+            mode="lines",
+            name="Price",
+            yaxis="y2"
+        ))
+
+        # ✅ 20일 이동평균선 추가
+        df_log["MA20"] = df_log["종가"].rolling(20).mean()
+        fig.add_trace(go.Scatter(
+            x=df_log.index, y=df_log["MA20"], mode="lines", name="20일 MA",
+            yaxis="y2", line=dict(color="orange", dash="dash")
+        ))
+
+        # 매수/매도 시점 필터
+        buy_points = df_log[df_log["신호"] == "BUY"]
+        sell_points = df_log[df_log["신호"] == "SELL"]
+
+        # 동시 만족 필터
+        both_buy = buy_points[buy_points["양시그널"] == True]
+        both_sell = sell_points[sell_points["양시그널"] == True]
+
+        # 일반 BUY 마커
+        fig.add_trace(go.Scatter(
+            x=buy_points.index,
+            y=buy_points["종가"],
+            mode="markers",
+            name="BUY",
+            yaxis="y2",
+            marker=dict(
+                color="green",
+                size=6,
+                symbol="triangle-up"
+            )
+        ))
+
+        # 일반 SELL 마커
+        fig.add_trace(go.Scatter(
+            x=sell_points.index,
+            y=sell_points["종가"],
+            mode="markers",
+            name="SELL",
+            yaxis="y2",
+            marker=dict(
+                color="red",
+                size=6,
+                symbol="triangle-down"
+            )
+        ))
+
+        # 동시 BUY 마커 (노란 테두리)
+        fig.add_trace(go.Scatter(
+            x=both_buy.index,
+            y=both_buy["종가"],
+            mode="markers",
+            name="BUY (양시그널)",
+            yaxis="y2",
+            marker=dict(
+                color="green",
+                size=9,
+                symbol="triangle-up",
+                line=dict(color="yellow", width=2)
+            )
+        ))
+
+        # 동시 SELL 마커 (노란 테두리)
+        fig.add_trace(go.Scatter(
+            x=both_sell.index,
+            y=both_sell["종가"],
+            mode="markers",
+            name="SELL (양시그널)",
+            yaxis="y2",
+            marker=dict(
+                color="red",
+                size=9,
+                symbol="triangle-down",
+                line=dict(color="yellow", width=2)
+            )
+        ))
+
+        # 손절/익절 마커 (자산 축)
+        sl = df_log[df_log["손절발동"] == True]
+        tp = df_log[df_log["익절발동"] == True]
+        if not sl.empty:
+            fig.add_trace(go.Scatter(
+                x=sl.index, y=sl["자산"], mode="markers", name="손절",
+                yaxis="y1", marker=dict(symbol="x", size=9)
+            ))
+        if not tp.empty:
+            fig.add_trace(go.Scatter(
+                x=tp.index, y=tp["자산"], mode="markers", name="익절",
+                yaxis="y1", marker=dict(symbol="star", size=10)
+            ))
+
+        # 레이아웃 설정
+        fig.update_layout(
+            title=f"📈 자산 & 종가 흐름 (BUY/SELL 시점 포함) — 벤치마크 수익률 {bh_ret}%",
+            yaxis=dict(title="Asset"),
+            yaxis2=dict(title="Price", overlaying="y", side="right"),
+            hovermode="x unified",
+            height=800
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ===== 트레이드 페어 요약 =====
+        pairs, buy_cache = [], None
+        for _, r in df_log.reset_index().iterrows():
+            if r["신호"] == "BUY":
+                buy_cache = r
+            elif r["신호"] == "SELL" and buy_cache is not None:
+                pb = buy_cache["체결가"] if pd.notna(buy_cache.get("체결가")) else buy_cache["종가"]
+                ps = r["체결가"] if pd.notna(r.get("체결가")) else r["종가"]
+                pnl = (ps - pb) / pb * 100
+                pairs.append({
+                    "진입일": buy_cache["날짜"],
+                    "청산일": r["날짜"],
+                    "진입가(체결가)": round(pb, 4),
+                    "청산가(체결가)": round(ps, 4),
+                    "보유일": r["보유일"],
+                    "수익률(%)": round(pnl, 2),
+                    "청산이유": "손절" if r["손절발동"] else ("익절" if r["익절발동"] else "규칙매도")
+                })
+                buy_cache = None
+
+        if pairs:
+            st.subheader("🧾 트레이드 요약 (체결가 기준)")
+            st.dataframe(pd.DataFrame(pairs))
+
+        # 다운로드 버튼 (로그)
+        with st.expander("🧾 매매 로그"):
+            st.dataframe(df_log)
+        csv = df_log.reset_index().to_csv(index=False).encode("utf-8-sig")
+        st.download_button("⬇️ 백테스트 결과 다운로드 (CSV)", data=csv, file_name="backtest_result.csv", mime="text/csv")
+
 
 ########
-with tab4:
-    # ── 랜덤 시뮬 / 자동 탐색 ──
-    with st.expander("🎲 랜덤 전략 시뮬레이션 실행", expanded=False):
+    with st.expander("🎲 랜덤 시뮬 변수 후보 입력", expanded=False):
+        def _parse_list(text, typ="int"):
+            if text is None: return []
+            toks = [t for t in re.split(r"[,\s]+", str(text).strip()) if t]
+            def to_bool(s): return str(s).strip().lower() in ("1","true","t","y","yes","on")
+            out = []
+            for t in toks:
+                if typ == "int":
+                    out.append("same" if str(t).lower()=="same" else int(t))
+                elif typ == "float":
+                    out.append(float(t))
+                elif typ == "bool":
+                    out.append(to_bool(t))
+                else:
+                    out.append(str(t))
+            seen, dedup = set(), []
+            for v in out:
+                k = (typ, v)
+                if k in seen: continue
+                seen.add(k); dedup.append(v)
+            return dedup
+
         colL, colR = st.columns(2)
         with colL:
             txt_offset_cl_buy     = st.text_input("offset_cl_buy 후보",     "1,5,15,25")
@@ -2637,18 +2710,6 @@ with tab4:
 
         n_simulations = st.number_input("시뮬레이션 횟수", value=100, min_value=1, step=10)
 
-        # 현재 데이터(prepare_base) 미리 준비
-        signal_ticker = st.session_state.get("signal_ticker_input", "SOXL")
-        trade_ticker  = st.session_state.get("trade_ticker_input", "SOXL")
-        start_date    = st.session_state.get("start_date")
-        end_date      = st.session_state.get("end_date")
-
-        ma_pool = [5, 10, 15, 20, 25, 50]
-        base, x_sig, x_trd, ma_dict_sig = prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool)
-
-        if st.session_state.get("seed", 0):
-            random.seed(int(st.session_state["seed"]))
-
         choices_dict = {
             "ma_buy":               _parse_list(txt_ma_buy, "int"),
             "offset_ma_buy":        _parse_list(txt_offset_ma_buy, "int"),
@@ -2672,67 +2733,66 @@ with tab4:
             "take_profit_pct":      _parse_list(txt_take_profit, "float"),
         }
 
-        if st.button("🧪 랜덤 전략 시뮬레이션 실행", use_container_width=True, key="btn_randrun"):
-            if base is None or len(base) == 0:
-                st.warning("데이터가 부족합니다. 기간/티커를 확인하세요.")
-            else:
-                df_sim = run_random_simulations_fast(
-                    int(n_simulations), base, x_sig, x_trd, ma_dict_sig,
-                    initial_cash=_safe_int(st.session_state.get("initial_cash", 5_000_000)),
-                    fee_bps=_safe_int(st.session_state.get("fee_bps", 25)),
-                    slip_bps=_safe_int(st.session_state.get("slip_bps", 0)),
-                    choices_dict=choices_dict,
-                    strategy_behavior=st.session_state.get("strategy_behavior", "1. 포지션 없으면 매수 / 보유 중이면 매도"),
-                    min_hold_days=_safe_int(st.session_state.get("min_hold_days", 0))
-                )
-                if df_sim.empty:
-                    st.warning("유효한 결과가 없습니다. 후보군/횟수를 조정하세요.")
-                else:
-                    st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
-                    st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True), use_container_width=True)
-                    st.download_button("⬇️ 결과 다운로드 (CSV)",
-                                       data=df_sim.to_csv(index=False).encode("utf-8-sig"),
-                                       file_name="random_sim_results.csv", mime="text/csv",
-                                       key="dl_rand_csv")
+        if st.button("🧪 랜덤 전략 시뮬레이션 실행", use_container_width=True):
+            ma_pool = [5, 10, 15, 25, 50]
+            base, x_sig, x_trd, ma_dict_sig = prepare_base(
+                signal_ticker, trade_ticker, start_date, end_date, ma_pool
+            )
+            if seed:
+                random.seed(int(seed))
+            df_sim = run_random_simulations_fast(
+                int(n_simulations), base, x_sig, x_trd, ma_dict_sig,
+                initial_cash=initial_cash_ui, fee_bps=fee_bps, slip_bps=slip_bps,
+                choices_dict=choices_dict
+            )
+            st.subheader(f"📈 랜덤 전략 시뮬레이션 결과 (총 {n_simulations}회)")
+            st.dataframe(df_sim.sort_values(by="수익률 (%)", ascending=False).reset_index(drop=True))
 
     with st.expander("🔎 자동 최적 전략 탐색 (Train/Test)", expanded=False):
         st.markdown("""
-- 아래 후보군을 토대로 **랜덤 탐색**을 수행합니다.  
-- 기간을 **Train/Test로 분할**하여 **일반화 성능**을 같이 확인합니다.  
-- 제약조건(최소 매매 횟수, 최소 승률, 최대 MDD)으로 필터링 후,  
-  선택한 **목표 지표(Test)** 기준으로 정렬합니다.
+- 아래 후보군(위 랜덤 시뮬 입력과 동일 포맷)을 토대로 **랜덤 탐색**을 수행해요.  
+- 기간을 **Train/Test로 분할**해서 **일반화 성능**을 같이 보여줍니다.  
+- 제약조건(최소 매매 횟수, 최소 승률, 최대 MDD)을 걸어 후보를 거르며,  
+  정렬은 선택한 **목표 지표의 Test 성과**를 기준으로 합니다.
 """)
-
         colA, colB = st.columns(2)
         with colA:
-            split_ratio = st.slider("Train 비중 (나머지 Test)", min_value=0.5, max_value=0.9, value=0.7, step=0.05, key="split_ratio")
-            objective_metric = st.selectbox("목표 지표", ["수익률 (%)", "승률 (%)", "샤프", "Profit Factor", "MDD (%)"], index=0, key="obj_metric")
+            split_ratio = st.slider("Train 비중 (나머지 Test)", min_value=0.5, max_value=0.9, value=0.7, step=0.05)
+            objective_metric = st.selectbox("목표 지표", ["수익률 (%)", "승률", "샤프", "Profit Factor", "MDD (%)"], index=0)
             objective_mode = "min" if objective_metric == "MDD (%)" else "max"
-            n_trials = st.number_input("탐색 시도 횟수 (랜덤)", value=200, min_value=20, step=20, key="n_trials")
-            topn_show = st.number_input("상위 N개만 표시", value=10, min_value=5, step=5, key="topn_show")
+            n_trials = st.number_input("탐색 시도 횟수 (랜덤)", value=200, min_value=20, step=20)
+            topn_show = st.number_input("상위 N개만 표시", value=10, min_value=5, step=5)
         with colB:
-            min_trades = st.number_input("제약: 최소 매매 횟수", value=5, min_value=0, step=1, key="min_trades")
-            min_winrate = st.number_input("제약: 최소 승률(%)", value=55.0, step=1.0, key="min_winrate")
-            max_mdd_in = st.number_input("제약: 최대 MDD(%) (0=미적용)", value=0.0, step=1.0, key="max_mdd_input")
-            max_mdd = None if max_mdd_in == 0.0 else float(max_mdd_in)
+            min_trades = st.number_input("제약: 최소 매매 횟수", value=5, min_value=0, step=1)
+            min_winrate = st.number_input("제약: 최소 승률(%)", value=55.0, step=1.0)
+            max_mdd = st.number_input("제약: 최대 MDD(%) (0=미적용)", value=0.0, step=1.0)
+            max_mdd = None if max_mdd == 0.0 else float(max_mdd)
 
-        # 후보군은 위 랜덤 섹션과 동일 입력을 재사용
-        choices_dict_auto = choices_dict  # 동일 객체 사용
+        if st.button("🚀 자동 탐색 실행 (Train/Test)", use_container_width=True):
+            # MA 풀: 후보군에서 자동 추출
+            ma_pool = set([1, 5, 10, 15, 25])
+            for key in ("ma_buy","ma_sell","ma_compare_short","ma_compare_long"):
+                for v in choices_dict.get(key, []):
+                    if v == "same":
+                        continue
+                    if isinstance(v, int) and v > 0:
+                        ma_pool.add(v)
 
-        if st.button("🚀 자동 탐색 실행 (Train/Test)", use_container_width=True, key="btn_auto_search"):
+            if seed:
+                random.seed(int(seed))
+
             df_auto = auto_search_train_test(
                 signal_ticker=signal_ticker, trade_ticker=trade_ticker,
                 start_date=start_date, end_date=end_date,
                 split_ratio=float(split_ratio),
-                choices_dict=choices_dict_auto,
+                choices_dict=choices_dict,
                 n_trials=int(n_trials),
                 objective_metric=objective_metric,
                 objective_mode=objective_mode,
-                initial_cash=_safe_int(st.session_state.get("initial_cash", 5_000_000)),
-                fee_bps=_safe_int(st.session_state.get("fee_bps", 25)),
-                slip_bps=_safe_int(st.session_state.get("slip_bps", 0)),
-                strategy_behavior=st.session_state.get("strategy_behavior", "1. 포지션 없으면 매수 / 보유 중이면 매도"),
-                min_hold_days=_safe_int(st.session_state.get("min_hold_days", 0)),
+                initial_cash=initial_cash_ui,
+                fee_bps=fee_bps, slip_bps=slip_bps,
+                strategy_behavior=strategy_behavior,
+                min_hold_days=min_hold_days,
                 execution_lag_days=1,
                 execution_price_mode="next_close",
                 constraints={"min_trades": int(min_trades), "min_winrate": float(min_winrate), "max_mdd": max_mdd}
@@ -2741,16 +2801,14 @@ with tab4:
             if df_auto.empty:
                 st.warning("조건을 만족하는 결과가 없거나 데이터가 부족합니다. 후보군/제약/기간을 조정해 보세요.")
             else:
-                st.subheader(f"🏆 자동 탐색 결과 (상위 {int(topn_show)}개, Test {objective_metric} 기준 정렬)")
-                st.dataframe(df_auto.head(int(topn_show)), use_container_width=True)
-                st.download_button("⬇️ 자동 탐색 결과 다운로드 (CSV)",
-                                   data=df_auto.to_csv(index=False).encode("utf-8-sig"),
-                                   file_name="auto_search_train_test.csv", mime="text/csv",
-                                   key="dl_auto_csv")
+                st.subheader(f"🏆 자동 탐색 결과 (상위 {topn_show}개, Test {objective_metric} 기준 정렬)")
+                st.dataframe(df_auto.head(int(topn_show)))
+                csv_auto = df_auto.to_csv(index=False).encode("utf-8-sig")
+                st.download_button("⬇️ 자동 탐색 결과 다운로드 (CSV)", data=csv_auto, file_name="auto_search_train_test.csv", mime="text/csv")
 
                 with st.expander("🔥 베스트 파라미터 1개 즉시 적용(선택)", expanded=False):
                     best = df_auto.iloc[0].to_dict()
-                    st.write({k: best.get(k) for k in [
+                    st.write({k: best[k] for k in [
                         "ma_buy","offset_ma_buy","offset_cl_buy","buy_operator",
                         "ma_sell","offset_ma_sell","offset_cl_sell","sell_operator",
                         "use_trend_in_buy","use_trend_in_sell",
@@ -2758,5 +2816,6 @@ with tab4:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
