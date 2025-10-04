@@ -418,9 +418,8 @@ def _on_change_preset():
 # =====================================================================================
 # 4) UI — 프리셋 선택 & 기본 입력
 # =====================================================================================
-selected_preset = st.selectbox("🎯 전략 프리셋 선택", ["직접 설정"] + list(PRESETS.keys())), key="selected_preset",
-    on_change=_on_change_preset
-)
+selected_preset = st.selectbox("🎯 전략 프리셋 선택", ["직접 설정"] + list(PRESETS.keys()), key="selected_preset",
+    on_change=_on_change_preset)
 
 col1, col2 = st.columns(2)
 with col1:
@@ -1216,6 +1215,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
