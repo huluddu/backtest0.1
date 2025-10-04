@@ -1532,6 +1532,7 @@ def _on_change_preset():
 # 📌 프리셋 선택
 selected_preset = st.selectbox("🎯 전략 프리셋 선택", ["직접 설정"] + list(PRESETS.keys()), key="selected_preset",
     on_change=_on_change_preset)
+preset_values = {} if selected_preset == "직접 설정" else PRESETS[selected_preset]
 
 # 기본 입력
 col1, col2 = st.columns(2)
@@ -2193,6 +2194,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
