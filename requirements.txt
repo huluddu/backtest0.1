@@ -1,10 +1,19 @@
+# --- your imports ---
 streamlit
-pandas
-numpy
-plotly
-matplotlib
 yfinance
+pandas
+matplotlib
+plotly
 pykrx
-python-dateutil
-pytz
+#numpy
+
+# --- pykrx 의존 (환경에 따라 자동 설치되지만, 명시해두면 안정적) ---
 requests
+beautifulsoup4
+lxml
+python-dateutil
+
+# --- core (pykrx가 pkg_resources를 쓰므로 필수) ---
+pip>=24
+setuptools>=70
+wheel
