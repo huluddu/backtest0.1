@@ -1,3 +1,4 @@
+st.set_page_config(page_title="시그널/백테스트 대시보드", page_icon="📊", layout="wide")
 
 import streamlit as st
 import pandas as pd
@@ -12,9 +13,9 @@ from functools import lru_cache
 import numpy as np
 import random
 import re
+import numpy as np
 
 # ============== Page Setup & Header (UI only) ==============
-st.set_page_config(page_title="시그널 대시보드", page_icon="📊", layout="wide")
 colA, colB, colC, colD = st.columns([1.5,1,1,1])
 with colA:
     st.markdown("## 📊 오늘 시그널 대시보드")
@@ -294,11 +295,11 @@ def prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool):
 
     return base, x_sig, x_trd, ma_dict_sig
 
-
-def get_mdd(asset_curve):
+def get_mdd(asset_curve: pd.Series) -> float:
     peak = asset_curve.cummax()
     drawdown = (asset_curve - peak) / peak
-    return drawdown.min() * 100
+    return float(drawdown.min() * 100)
+
 
 ###### 1min yfinance 유틸 함수 추가 #########
 @st.cache_data(show_spinner=False, ttl=30)
@@ -1510,17 +1511,10 @@ def run_random_simulations_fast(
 
 #########################################################
 # ✅ UI 구성 (UI-only; 로직 함수는 기존 그대로 사용)
-import datetime, random
-import numpy as np
-import pandas as pd
-import plotly.graph_objects as go
-import streamlit as st
-import re
+
 
 # 페이지/헤더
-st.set_page_config(page_title="전략 백테스트", layout="wide")
 st.title("📊 전략 백테스트 웹앱")
-
 st.markdown("모든 매매는 종가 매매이나, 손절,익절은 장중 시가. n일전 데이터 기반으로 금일 종가 매매를 한다.")
 st.markdown("KODEX미국반도체 390390, KODEX200 069500 KDOEX인버스 114800, KODEX미국나스닥100 379810, ACEKRX금현물 411060, KODEX은선물 114800, ACE미국30년국채액티브(H) 453850, ACE미국빅테크TOP7Plus 465580")
 
@@ -2092,6 +2086,12 @@ with tab3:
             st.subheader("🧾 트레이드 요약 (체결가 기준)")
             st.dataframe(pd.DataFrame(pairs))
 
+        max_consec_loss = 0; cur=0
+        for r in trade_returns:
+            if r < 0: cur += 1; max_consec_loss = max(max_consec_loss, cur)
+                else: cur = 0
+        mar = (summary_cagr / abs(mdd)) if mdd != 0 else np.inf
+
         # 다운로드 버튼 (로그)
         with st.expander("🧾 매매 로그"):
             st.dataframe(df_log)
@@ -2253,6 +2253,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
