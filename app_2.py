@@ -1507,70 +1507,6 @@ def run_random_simulations_fast(
             # (이미 result_clean에 "수익률 (%)", "승률 (%)"가 있음)
         })
     return pd.DataFrame(results)
-###################
-DEFAULTS = {
-    "signal_ticker":"SOXL", "trade_ticker":"SOXL",
-    "offset_cl_buy":25, "buy_operator":">", "offset_ma_buy":1, "ma_buy":25,
-    "use_trend_in_buy":True, "offset_compare_short":25, "ma_compare_short":25,
-    "offset_compare_long":1, "ma_compare_long":25,
-    "offset_cl_sell":1, "sell_operator":"<", "offset_ma_sell":1, "ma_sell":25,
-    "stop_loss_pct":0.0, "take_profit_pct":0.0, "min_hold_days":0,
-    "use_trend_in_sell":False,
-}
-
-MAP_TO_WIDGET = {
-    "signal_ticker": "signal_ticker_input",
-    "trade_ticker": "trade_ticker_input",
-    "offset_cl_buy": "offset_cl_buy",
-    "buy_operator": "buy_operator",
-    "offset_ma_buy": "offset_ma_buy",
-    "ma_buy": "ma_buy",
-    "use_trend_in_buy": "use_trend_in_buy",
-    "offset_compare_short": "offset_compare_short",
-    "ma_compare_short": "ma_compare_short",
-    "offset_compare_long": "offset_compare_long",
-    "ma_compare_long": "ma_compare_long",
-    "offset_cl_sell": "offset_cl_sell",
-    "sell_operator": "sell_operator",
-    "offset_ma_sell": "offset_ma_sell",
-    "ma_sell": "ma_sell",
-    "stop_loss_pct": "stop_loss_pct",
-    "take_profit_pct": "take_profit_pct",
-    "min_hold_days": "min_hold_days",
-    "use_trend_in_sell": "use_trend_in_sell",
-}
-
-def _coerce_number(v, as_int=False):
-    if v is None: return 0 if as_int else 0.0
-    try:
-        return int(v) if as_int else float(v)
-    except Exception:
-        return int(float(v)) if as_int else float(v)
-
-def _apply_preset_to_state(preset_name: str):
-    p = {} if preset_name == "직접 설정" else {**DEFAULTS, **PRESETS.get(preset_name, {})}
-    for k_preset, k_widget in MAP_TO_WIDGET.items():
-        v = p.get(k_preset, DEFAULTS.get(k_preset))
-        if k_widget in {"offset_cl_buy","offset_ma_buy","ma_buy",
-                        "offset_compare_short","ma_compare_short","offset_compare_long","ma_compare_long",
-                        "offset_cl_sell","offset_ma_sell","ma_sell","min_hold_days"}:
-            v = _coerce_number(v, as_int=True)
-        elif k_widget in {"stop_loss_pct","take_profit_pct"}:
-            v = _coerce_number(v, as_int=False)
-        elif k_widget in {"use_trend_in_buy","use_trend_in_sell"}:
-            v = bool(v)
-        st.session_state[k_widget] = v
-
-# 최초 1회 기본값 세팅
-if "init_done" not in st.session_state:
-    _apply_preset_to_state("직접 설정")
-    st.session_state["init_done"] = True
-
-def _on_change_preset():
-    _apply_preset_to_state(st.session_state["selected_preset"])
-    st.rerun()
-
-
 
 #########################################################
 # ✅ UI 구성 (UI-only; 로직 함수는 기존 그대로 사용)
@@ -1593,8 +1529,8 @@ st.markdown("KODEX미국반도체 390390, KODEX200 069500 KDOEX인버스 114800,
 
 
 # 📌 프리셋 선택
-selected_preset = st.selectbox("🎯 전략 프리셋 선택", ["직접 설정"] + list(PRESETS.keys()))
-preset_values = {} if selected_preset == "직접 설정" else PRESETS[selected_preset]
+selected_preset = st.selectbox("🎯 전략 프리셋 선택", ["직접 설정"] + list(PRESETS.keys()), key="selected_preset",
+    on_change=_on_change_preset)
 
 # 기본 입력
 col1, col2 = st.columns(2)
@@ -2256,4 +2192,5 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
