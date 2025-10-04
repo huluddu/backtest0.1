@@ -1,5 +1,3 @@
-st.set_page_config(page_title="시그널/백테스트 대시보드", page_icon="📊", layout="wide")
-
 import streamlit as st
 import pandas as pd
 import yfinance as yf
@@ -1511,8 +1509,7 @@ def run_random_simulations_fast(
 
 #########################################################
 # ✅ UI 구성 (UI-only; 로직 함수는 기존 그대로 사용)
-
-
+st.set_page_config(page_title="시그널/백테스트 대시보드", page_icon="📊", layout="wide")
 # 페이지/헤더
 st.title("📊 전략 백테스트 웹앱")
 st.markdown("모든 매매는 종가 매매이나, 손절,익절은 장중 시가. n일전 데이터 기반으로 금일 종가 매매를 한다.")
@@ -2253,6 +2250,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
