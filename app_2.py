@@ -44,6 +44,75 @@ def _extract_trade_returns(result):
             return [float(t["pnl"])/float(t["buy_px"]) if float(t["buy_px"]) != 0 else 0.0 for t in trades]
     return []
 
+# --- 드롭인 패치: MAR 계산 안전 가드 ---
+
+def _as_pct(x):
+    """혼용되는 단위를 통일: 0.12(=12%)나 12(=12%) 모두 12.0으로 반환"""
+    if x is None:
+        return None
+    x = float(x)
+    # |x|>2 정도면 퍼센트로 간주 (휴리스틱), 그 외는 비율로 간주
+    return x if abs(x) > 2 else (x * 100.0)
+
+# 1) mdd 확보
+mdd = locals().get("mdd", None)  # 같은 스코프에 이미 있으면 사용
+if mdd is None:
+    mdd = (
+        result.get("mdd")
+        or (result.get("summary") or {}).get("mdd")
+        or result.get("MDD")
+    )
+
+# equity curve로 계산해서라도 채움
+if mdd is None:
+    eq = result.get("equity_curve")  # pd.Series 또는 list 가능
+    if eq is not None:
+        import pandas as pd
+        ser = pd.Series(eq)
+        peak = ser.cummax()
+        dd = (ser - peak) / peak
+        mdd = float(dd.min() * 100.0)  # % 단위(음수)로 저장
+
+# 최종 기본값(데이터 완전 없을 때)
+if mdd is None or (isinstance(mdd, float) and (mdd != mdd)):  # NaN 체크
+    mdd = 0.0
+
+# 2) CAGR 확보
+summary_cagr = locals().get("summary_cagr", None)
+if summary_cagr is None:
+    summary_cagr = (
+        result.get("cagr")
+        or (result.get("summary") or {}).get("cagr")
+        or result.get("CAGR")
+    )
+
+# equity curve로 계산해서라도 채움
+if summary_cagr is None:
+    eq = result.get("equity_curve")
+    start_dt = result.get("start_dt")  # 가능하면 datetime
+    end_dt   = result.get("end_dt")
+    if eq is not None:
+        import pandas as pd, numpy as np, datetime as _dt
+        ser = pd.Series(eq).astype(float)
+        if len(ser) >= 2 and ser.iloc[0] > 0:
+            # 기간(년) 추정: 날짜가 있으면 실제 일수, 없으면 252거래일 기준
+            if start_dt and end_dt:
+                years = (pd.to_datetime(end_dt) - pd.to_datetime(start_dt)).days / 365.25
+            else:
+                years = max(len(ser) / 252.0, 1e-9)
+            cagr_ratio = (ser.iloc[-1] / ser.iloc[0]) ** (1.0 / years) - 1.0
+            summary_cagr = cagr_ratio * 100.0  # % 단위
+
+# 최종 기본값
+if summary_cagr is None or (isinstance(summary_cagr, float) and (summary_cagr != summary_cagr)):
+    summary_cagr = 0.0
+
+# 3) 단위 통일 후 MAR 계산 (둘 다 % 단위로 가정)
+mdd_pct  = _as_pct(mdd) or 0.0
+cagr_pct = _as_pct(summary_cagr) or 0.0
+
+mar = float("inf") if mdd_pct == 0 else (cagr_pct / abs(mdd_pct))
+# --- 드롭인 패치 끝 ---
 
 # ============== Page Setup & Header (UI only) ==============
 colA, colB, colC, colD = st.columns([1.5,1,1,1])
@@ -2288,6 +2357,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
