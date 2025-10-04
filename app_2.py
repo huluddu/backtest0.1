@@ -2079,15 +2079,17 @@ with tab3:
                 })
                 buy_cache = None
 
-        if pairs:
-            st.subheader("🧾 트레이드 요약 (체결가 기준)")
-            st.dataframe(pd.DataFrame(pairs))
-
         max_consec_loss = 0; cur=0
         for r in trade_returns:
             if r < 0: cur += 1; max_consec_loss = max(max_consec_loss, cur)
             else: cur = 0
         mar = (summary_cagr / abs(mdd)) if mdd != 0 else np.inf
+
+
+        if pairs:
+            st.subheader("🧾 트레이드 요약 (체결가 기준)")
+            st.dataframe(pd.DataFrame(pairs))
+
 
         # 다운로드 버튼 (로그)
         with st.expander("🧾 매매 로그"):
@@ -2250,6 +2252,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
