@@ -1187,8 +1187,6 @@ def backtest_fast(
         "MDD 발생일": mdd_date.strftime("%Y-%m-%d"),
         "MDD 회복일": recovery_date.strftime("%Y-%m-%d") if recovery_date is not None else "미회복",
         "회복 기간 (일)": (recovery_date - mdd_date).days if recovery_date is not None else None,
-        "trades": trade_pairs,          
-        "trade_returns": trade_returns, 
         "매매 로그": logs,
         "최종 자산": round(final_asset)
     }
@@ -2248,6 +2246,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
