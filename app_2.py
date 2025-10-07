@@ -1042,15 +1042,17 @@ def backtest_fast(
 
         return stop_trigger, take_trigger, fill_px
 
-    def _schedule(action, i_now):
+    def _schedule(action, i_now, base_idx_for_signal):
         nonlocal pending_action, pending_due_idx
-        pending_action = action
-        pending_due_idx = i_now + int(execution_lag_days)
+        due = base_idx_for_signal + int(execution_lag_days)  # ← 신호일 + lag
+        if due < i_now:   # 주말/휴장 등으로 역전되면 안전하게 오늘로 당김
+            due = i_now
+        pending_action, pending_due_idx = action, due
 
     # ===== 메인 루프 =====
     for i in range(max(idx0, 1), n):
         # 신호는 '닫힌 캔들' 기준
-        base_idx_for_signal = i - 1
+        base_idx_for_signal = i # 이거가 i냐 i-1이냐에 따라서 signal_date가 바뀌는거같다.
         signal_date = pd.to_datetime(base["Date"].iloc[base_idx_for_signal])
 
         # --- 예약 도래 시 먼저 체결 ---
@@ -2339,6 +2341,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
