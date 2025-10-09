@@ -1042,15 +1042,17 @@ def backtest_fast(
 
         return stop_trigger, take_trigger, fill_px
 
-    def _schedule(action, i_now):
+    def _schedule(action, i_now, base_idx_for_signal):
         nonlocal pending_action, pending_due_idx
-        pending_action = action
-        pending_due_idx = i_now + int(execution_lag_days)
-
+        due = base_idx_for_signal + int(execution_lag_days)  # 신호일 + lag(거래일)
+        if due < i_now:   # 휴장/주말로 역전되면 안전하게 오늘로 당김
+            due = i_now
+        pending_action, pending_due_idx = action, due
+        
     # ===== 메인 루프 =====
     for i in range(max(idx0, 1), n):
         # 신호는 '닫힌 캔들' 기준
-        base_idx_for_signal = i - 1
+        base_idx_for_signal = i
         signal_date = pd.to_datetime(base["Date"].iloc[base_idx_for_signal])
 
         # --- 예약 도래 시 먼저 체결 ---
@@ -1128,32 +1130,32 @@ def backtest_fast(
             if sb == "1":  # 포지션 없으면 매수 / 보유 중이면 매도
                 if buy_condition and sell_condition:
                     if position == 0.0:
-                        _schedule("BUY", i)
+                        _schedule("BUY", i, base_idx_for_signal)
                     else:
                         if can_sell:
-                            _schedule("SELL", i)
+                            _schedule("SELL", i, base_idx_for_signal)
                 elif position == 0.0 and buy_condition:
-                    _schedule("BUY", i)
+                    _schedule("BUY", i, base_idx_for_signal)
                 elif can_sell:
-                    _schedule("SELL", i)
+                    _schedule("SELL", i, base_idx_for_signal)
 
             elif sb == "2":  # 매수 우선
                 if buy_condition and sell_condition:
                     if position == 0.0:
-                        _schedule("BUY", i)
+                        _schedule("BUY", i, base_idx_for_signal)
                 elif position == 0.0 and buy_condition:
-                    _schedule("BUY", i)
+                    _schedule("BUY", i, base_idx_for_signal)
                 elif can_sell:
-                    _schedule("SELL", i)
+                    _schedule("SELL", i, base_idx_for_signal)
 
             else:  # "3" 매도 우선
                 if buy_condition and sell_condition:
                     if position > 0.0 and can_sell:
-                        _schedule("SELL", i)
+                        _schedule("SELL", i, base_idx_for_signal)
                 elif position == 0.0 and buy_condition:
-                    _schedule("BUY", i)
+                    _schedule("BUY", i, base_idx_for_signal)
                 elif can_sell:
-                    _schedule("SELL", i)
+                    _schedule("SELL", i, base_idx_for_signal)
 
             # 미세 잔량 정리
             if abs(position) < 1e-12:
@@ -2339,6 +2341,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
