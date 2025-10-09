@@ -1144,11 +1144,11 @@ def backtest_fast(
                             else:
                                 _schedule("SELL", i, base_idx_for_signal)              
                 elif position == 0.0 and buy_condition:
-                        if int(execution_lag_days) == 0:
-                            signal, exec_price, just_bought = _exec_pending("BUY")
-                            exec_date = pd.to_datetime(base["Date"].iloc[i])
-                        else:
-                            _schedule("BUY", i, base_idx_for_signal)
+                    if int(execution_lag_days) == 0:
+                        signal, exec_price, just_bought = _exec_pending("BUY")
+                        exec_date = pd.to_datetime(base["Date"].iloc[i])
+                    else:
+                        _schedule("BUY", i, base_idx_for_signal)
                 elif can_sell:
                     if int(execution_lag_days) == 0:
                         signal, exec_price, just_bought = _exec_pending("SELL")
@@ -2383,6 +2383,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
