@@ -1050,10 +1050,6 @@ def backtest_fast(
         pending_action, pending_due_idx = action, due
 
     def _act(action, i_now, base_idx_for_signal):
-    """
-    execution_lag_days==0이면 즉시 체결, 아니면 예약 스케줄.
-    즉시 체결 시 그날 가격(px_base)로 fill.
-    """
     nonlocal cash, position, buy_price, pending_action, pending_due_idx, signal, exec_price, exec_date, just_bought
 
     if int(execution_lag_days) == 0:
@@ -2410,6 +2406,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
