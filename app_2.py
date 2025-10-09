@@ -1071,6 +1071,24 @@ def backtest_fast(
         else:
             _schedule(action, i_now, base_idx_for_signal)
 
+    def _exec_pending(action):
+        nonlocal cash, position, buy_price  # i는 바깥 for 루프의 현재 인덱스
+        px_base = xO[i] if execution_price_mode == "next_open" else x_trd[i]
+        if action == "BUY" and position == 0.0:
+            fill = _fill_buy(px_base)
+            position = cash / fill
+            cash = 0.0
+            buy_price = fill
+            return "BUY", fill, True   # (signal, exec_price, just_bought)
+        elif action == "SELL" and position > 0.0:
+            fill = _fill_sell(px_base)
+            cash = position * fill
+            position = 0.0
+            return "SELL", fill, False
+        return "HOLD", None, False
+
+
+   
         
     # ===== 메인 루프 =====
     for i in range(max(idx0, 1), n):
@@ -1145,6 +1163,8 @@ def backtest_fast(
         )
         buy_condition, sell_condition = sig["buy"], sig["sell"]
 
+
+        
         # --- 순수 룰에 의한 '오늘 예약' 판단 (이미 당일 체결된 경우 제외) ---
         if signal not in ("BUY", "SELL"):
             base_sell = sell_condition
@@ -2406,6 +2426,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
