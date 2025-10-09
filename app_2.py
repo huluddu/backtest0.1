@@ -1048,6 +1048,33 @@ def backtest_fast(
         if due < i_now:   # 휴장/주말로 역전되면 안전하게 오늘로 당김
             due = i_now
         pending_action, pending_due_idx = action, due
+
+    def _act(action, i_now, base_idx_for_signal):
+    """
+    execution_lag_days==0이면 즉시 체결, 아니면 예약 스케줄.
+    즉시 체결 시 그날 가격(px_base)로 fill.
+    """
+    nonlocal cash, position, buy_price, pending_action, pending_due_idx, signal, exec_price, exec_date, just_bought
+
+    if int(execution_lag_days) == 0:
+        # 그날 체결: 보통 next_close(=당일 종가) 사용을 권장
+        px_base = xC[i_now] if execution_price_mode == "next_close" else xO[i_now]
+        if action == "BUY" and position == 0.0:
+            fill = _fill_buy(px_base)
+            position = cash / fill; cash = 0.0
+            buy_price = fill
+            signal = "BUY"; exec_price = fill; exec_date = pd.to_datetime(base["Date"].iloc[i_now])
+            just_bought = True
+        elif action == "SELL" and position > 0.0:
+            fill = _fill_sell(px_base)
+            cash = position * fill; position = 0.0
+            buy_price = None
+            signal = "SELL"; exec_price = fill; exec_date = pd.to_datetime(base["Date"].iloc[i_now])
+        # 즉시 체결은 예약이 아니므로 클리어
+        pending_action, pending_due_idx = None, None
+    else:
+        _schedule(action, i_now, base_idx_for_signal)
+
         
     # ===== 메인 루프 =====
     for i in range(max(idx0, 1), n):
@@ -2383,6 +2410,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
