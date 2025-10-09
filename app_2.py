@@ -946,7 +946,7 @@ def backtest_fast(
     use_trend_in_buy=True,
     use_trend_in_sell=False,
     buy_operator=">", sell_operator="<",
-    execution_lag_days=1,
+    execution_lag_days=0,
     execution_price_mode="next_close"
 ):
     import numpy as np
@@ -1388,7 +1388,7 @@ def auto_search_train_test(
     fee_bps=0, slip_bps=0,
     strategy_behavior="1. 포지션 없으면 매수 / 보유 중이면 매도",
     min_hold_days=0,
-    execution_lag_days=1,
+    execution_lag_days=0,
     execution_price_mode="next_close",
     constraints=None,               # {"min_trades": 5, "min_winrate": 0.0, "max_mdd": None}
 ):
@@ -1580,7 +1580,7 @@ def run_random_simulations_fast(
             use_trend_in_buy=use_trend_in_buy,
             use_trend_in_sell=use_trend_in_sell,
             buy_operator=buy_operator, sell_operator=sell_operator,
-            execution_lag_days=1,
+            execution_lag_days=0,
             execution_price_mode="next_close"
         )
         
@@ -1969,7 +1969,7 @@ with tab3:
             use_trend_in_sell=use_trend_in_sell,
             buy_operator=buy_operator,
             sell_operator=sell_operator,
-            execution_lag_days=1,
+            execution_lag_days=0,
             execution_price_mode="next_close"
         )
 
@@ -2318,7 +2318,7 @@ with tab3:
                 fee_bps=fee_bps, slip_bps=slip_bps,
                 strategy_behavior=strategy_behavior,
                 min_hold_days=min_hold_days,
-                execution_lag_days=1,
+                execution_lag_days=0,
                 execution_price_mode="next_close",
                 constraints={"min_trades": int(min_trades), "min_winrate": float(min_winrate), "max_mdd": max_mdd}
             )
@@ -2341,6 +2341,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
