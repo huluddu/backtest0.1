@@ -1130,33 +1130,75 @@ def backtest_fast(
             if sb == "1":  # 포지션 없으면 매수 / 보유 중이면 매도
                 if buy_condition and sell_condition:
                     if position == 0.0:
-                        _schedule("BUY", i, base_idx_for_signal)
+                        if int(execution_lag_days) == 0:
+                            signal, exec_price, just_bought = _exec_pending("BUY")
+                            exec_date = pd.to_datetime(base["Date"].iloc[i])
+                        else:
+                            _schedule("BUY", i, base_idx_for_signal)
                     else:
                         if can_sell:
-                            _schedule("SELL", i, base_idx_for_signal)
+                            if int(execution_lag_days) == 0:
+                                signal, exec_price, just_bought = _exec_pending("SELL")
+                                exec_date = pd.to_datetime(base["Date"].iloc[i])
+                                buy_price = None  # (SELL 체결 후 보유가 초기화되도록)
+                            else:
+                                _schedule("SELL", i, base_idx_for_signal)              
                 elif position == 0.0 and buy_condition:
-                    _schedule("BUY", i, base_idx_for_signal)
+                        if int(execution_lag_days) == 0:
+                            signal, exec_price, just_bought = _exec_pending("BUY")
+                            exec_date = pd.to_datetime(base["Date"].iloc[i])
+                        else:
+                            _schedule("BUY", i, base_idx_for_signal)
                 elif can_sell:
-                    _schedule("SELL", i, base_idx_for_signal)
+                    if int(execution_lag_days) == 0:
+                        signal, exec_price, just_bought = _exec_pending("SELL")
+                        exec_date = pd.to_datetime(base["Date"].iloc[i])
+                        buy_price = None  # (SELL 체결 후 보유가 초기화되도록)
+                    else:
+                        _schedule("SELL", i, base_idx_for_signal)
+
 
             elif sb == "2":  # 매수 우선
                 if buy_condition and sell_condition:
                     if position == 0.0:
-                        _schedule("BUY", i, base_idx_for_signal)
+                        if int(execution_lag_days) == 0:
+                            signal, exec_price, just_bought = _exec_pending("BUY")
+                            exec_date = pd.to_datetime(base["Date"].iloc[i])
+                        else:
+                            _schedule("BUY", i, base_idx_for_signal)
                 elif position == 0.0 and buy_condition:
                     _schedule("BUY", i, base_idx_for_signal)
                 elif can_sell:
-                    _schedule("SELL", i, base_idx_for_signal)
-
+                    if int(execution_lag_days) == 0:
+                        signal, exec_price, just_bought = _exec_pending("SELL")
+                        exec_date = pd.to_datetime(base["Date"].iloc[i])
+                        buy_price = None  # (SELL 체결 후 보유가 초기화되도록)
+                    else:
+                        _schedule("SELL", i, base_idx_for_signal)
+                        
             else:  # "3" 매도 우선
                 if buy_condition and sell_condition:
                     if position > 0.0 and can_sell:
-                        _schedule("SELL", i, base_idx_for_signal)
+                        if can_sell:
+                            if int(execution_lag_days) == 0:
+                                signal, exec_price, just_bought = _exec_pending("SELL")
+                                exec_date = pd.to_datetime(base["Date"].iloc[i])
+                                buy_price = None  # (SELL 체결 후 보유가 초기화되도록)
+                            else:
+                                _schedule("SELL", i, base_idx_for_signal)
                 elif position == 0.0 and buy_condition:
-                    _schedule("BUY", i, base_idx_for_signal)
+                        if int(execution_lag_days) == 0:
+                            signal, exec_price, just_bought = _exec_pending("BUY")
+                            exec_date = pd.to_datetime(base["Date"].iloc[i])
+                        else:
+                            _schedule("BUY", i, base_idx_for_signal)
                 elif can_sell:
-                    _schedule("SELL", i, base_idx_for_signal)
-
+                    if int(execution_lag_days) == 0:
+                        signal, exec_price, just_bought = _exec_pending("SELL")
+                        exec_date = pd.to_datetime(base["Date"].iloc[i])
+                        buy_price = None  # (SELL 체결 후 보유가 초기화되도록)
+                    else:
+                        _schedule("SELL", i, base_idx_for_signal)
             # 미세 잔량 정리
             if abs(position) < 1e-12:
                 position = 0.0
@@ -2341,6 +2383,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
