@@ -2297,26 +2297,26 @@ with tab3:
 
         colL, colR = st.columns(2)
         with colL:
-            txt_offset_cl_buy     = st.text_input("offset_cl_buy 후보",     "1,5,15,25")
+            txt_offset_cl_buy     = st.text_input("offset_cl_buy 후보",     "1,10,20,50")
             txt_buy_op            = st.text_input("buy_operator 후보",      ">,<")
-            txt_offset_ma_buy     = st.text_input("offset_ma_buy 후보",     "1,5,15,25")
-            txt_ma_buy            = st.text_input("ma_buy 후보",            "5,10,15,20,25")
+            txt_offset_ma_buy     = st.text_input("offset_ma_buy 후보",     "1,10,20,50")
+            txt_ma_buy            = st.text_input("ma_buy 후보",            "5,10,15,20,25,50")
 
-            txt_offset_cl_sell    = st.text_input("offset_cl_sell 후보",    "1,5,15,25")
+            txt_offset_cl_sell    = st.text_input("offset_cl_sell 후보",    "1,10,20,50")
             txt_sell_op           = st.text_input("sell_operator 후보",     "<,>")
-            txt_offset_ma_sell    = st.text_input("offset_ma_sell 후보",    "1,5,15,25")
-            txt_ma_sell           = st.text_input("ma_sell 후보",           "5,10,15,20,25")
+            txt_offset_ma_sell    = st.text_input("offset_ma_sell 후보",    "1,10,20,50")
+            txt_ma_sell           = st.text_input("ma_sell 후보",           "5,10,15,20,25,50")
 
         with colR:
-            txt_off_cmp_s         = st.text_input("offset_compare_short 후보", "1,5,15,25")
-            txt_ma_cmp_s          = st.text_input("ma_compare_short 후보",     "5,10,15,20,25")
-            txt_off_cmp_l         = st.text_input("offset_compare_long 후보",  "1,5,15,25")
+            txt_off_cmp_s         = st.text_input("offset_compare_short 후보", "1,10,20,50")
+            txt_ma_cmp_s          = st.text_input("ma_compare_short 후보",     "5,10,15,20,25,50")
+            txt_off_cmp_l         = st.text_input("offset_compare_long 후보",  "1,10,20,50")
             txt_ma_cmp_l          = st.text_input("ma_compare_long 후보",      "same")
 
             txt_use_trend_buy     = st.text_input("use_trend_in_buy 후보(True/False)",  "True,False")
             txt_use_trend_sell    = st.text_input("use_trend_in_sell 후보(True/False)", "True")
-            txt_stop_loss         = st.text_input("stop_loss_pct 후보(%)",  "0")
-            txt_take_profit       = st.text_input("take_profit_pct 후보(%)","0,10,30")
+            txt_stop_loss         = st.text_input("stop_loss_pct 후보(%)",  "0,15")
+            txt_take_profit       = st.text_input("take_profit_pct 후보(%)","0,10,20")
 
         n_simulations = st.number_input("시뮬레이션 횟수", value=100, min_value=1, step=10)
 
@@ -2426,6 +2426,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
