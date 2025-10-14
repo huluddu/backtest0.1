@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import yfinance as yf
@@ -1303,17 +1302,16 @@ def auto_search_train_test(
     min_trades  = constraints.get("min_trades", 0)
     min_winrate = constraints.get("min_winrate", 0.0)
     max_mdd     = constraints.get("max_mdd", None)
-
-    # 기본값
-
-     defaults = dict(
-         ma_buy=50, offset_ma_buy=50, offset_cl_buy=1, buy_operator=">",
-         ma_sell=10, offset_ma_sell=50, offset_cl_sell=50, sell_operator="<",
-         use_trend_in_buy=True, use_trend_in_sell=False,
-         offset_compare_short=20, ma_compare_short=50, offset_compare_long=50, ma_compare_long=50,
-         stop_loss_pct=15.0, take_profit_pct=20.0,
-         initial_cash=initial_cash, strategy_behavior=strategy_behavior, min_hold_days=min_hold_days
-     )
+    
+    # 기본 값
+    defaults = dict(
+        ma_buy=50, offset_ma_buy=50, offset_cl_buy=1, buy_operator=">",
+        ma_sell=10, offset_ma_sell=50, offset_cl_sell=50, sell_operator="<",
+        use_trend_in_buy=True, use_trend_in_sell=False,
+        offset_compare_short=20, ma_compare_short=50, offset_compare_long=50, ma_compare_long=50,
+        stop_loss_pct=15.0, take_profit_pct=20.0,
+        initial_cash=initial_cash, strategy_behavior=strategy_behavior, min_hold_days=min_hold_days
+    )
 
     # 후보 MA 윈도우 풀(최소화): 속도 위해 집합으로 모아 계산
     ma_pool = set()
@@ -2191,6 +2189,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
