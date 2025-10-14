@@ -95,45 +95,6 @@ def _fast_ma(x: np.ndarray, w: int) -> np.ndarray:
         y[w-1:] = conv
     return y
 
-### 예약 정보 불러오는 함수 ###
-
-def _preview_pending_label(buy_ok: bool, sell_ok: bool, *, position: int, min_hold_days: int, strategy_behavior: str):
-    """
-    '오늘' 조건(buy_ok/sell_ok) 기준으로, 내일 체결한다고 가정했을 때
-    예약될 액션을 미리보기. position: 0(무포지션) 또는 1(보유중 가정)
-    반환: "BUY 예약", "SELL 예약", 또는 None
-    """
-    sb = (strategy_behavior or "1")[:1]  # "1" | "2" | "3"
-    can_sell = (position > 0) and (min_hold_days <= 0)
-
-    if sb == "1":
-        if buy_ok and sell_ok:
-            return "BUY 예약" if position == 0 else ("SELL 예약" if can_sell else None)
-        if position == 0 and buy_ok:
-            return "BUY 예약"
-        if can_sell and sell_ok:
-            return "SELL 예약"
-        return None
-
-    elif sb == "2":
-        if buy_ok and sell_ok:
-            return "BUY 예약" if position == 0 else None
-        if position == 0 and buy_ok:
-            return "BUY 예약"
-        if can_sell and sell_ok:
-            return "SELL 예약"
-        return None
-
-    else:  # sb == "3"
-        if buy_ok and sell_ok:
-            return ("SELL 예약" if (position > 0 and can_sell) else None)
-        if position == 0 and buy_ok:
-            return "BUY 예약"
-        if can_sell and sell_ok:
-            return "SELL 예약"
-        return None
-
-
 ##########################
 
 
@@ -421,16 +382,6 @@ def check_signal_today(
         st.error("📉 오늘은 매도 시그널입니다!")
     else:
         st.info("⏸ 매수/매도 조건 모두 만족하지 않음")
-
-    
-        # --- 예약 미리보기 (내일 체결 가정) ---
-    pending_flat   = _preview_pending_label(buy_ok, sell_ok, position=0, min_hold_days=min_hold_days, strategy_behavior=strategy_behavior)
-    pending_holding= _preview_pending_label(buy_ok, sell_ok, position=1, min_hold_days=min_hold_days, strategy_behavior=strategy_behavior)
-
-    lines = []
-    lines.append(f"무포지션 가정 → {pending_flat}" if pending_flat else "무포지션 가정 → 예약 없음")
-    lines.append(f"보유중 가정 → {pending_holding}" if pending_holding else "보유중 가정 → 예약 없음")
-    st.info("📝 예약 미리보기\n- " + "\n- ".join(lines))
 
     # ── 최근 조건 만족일 찾기: BUY / SELL / HOLD(둘 다 불만족) ──
     last_buy_date  = None
@@ -847,7 +798,7 @@ def backtest_fast(
     use_trend_in_buy=True,
     use_trend_in_sell=False,
     buy_operator=">", sell_operator="<",
-    execution_lag_days=1,              # ✅ 추가: 신호 발생 후 몇 거래일 뒤에 체결할지 (기본 1일)
+    execution_lag_days=0,              # ✅ 추가: 신호 발생 후 몇 거래일 뒤에 체결할지 (기본 0일)
     execution_price_mode="next_close"   # ✅ 추가: "next_open" | "next_close"
 ):
     n = len(base)
@@ -2189,6 +2140,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
