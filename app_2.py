@@ -1285,8 +1285,8 @@ def backtest_fast(
             "자산": round(total),
             "매수시그널": bool(buy_condition),
             "매도시그널": bool(sell_condition),
-            "손절발동": bool(signal == "SELL" and exec_price is not None and stop_loss_pct > 0 and (low_today <= (buy_price or np.inf))),  # 대략적 플래그
-            "익절발동": False,  # 필요하면 위 로직에서 별도 플래그 보존
+            "손절발동": bool(stop_hit),
+            "익절발동": bool(take_hit),
             "추세만족": bool(trend_ok),
             "매수가격비교": None if (np.isnan(cl_b) or np.isnan(ma_b)) else round(cl_b - ma_b, 6),
             "매도가격비교": None if (np.isnan(cl_s) or np.isnan(ma_s)) else round(cl_s - ma_s, 6),
@@ -2426,6 +2426,7 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
