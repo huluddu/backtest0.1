@@ -1306,12 +1306,13 @@ def auto_search_train_test(
 
     # 기본값
     defaults = dict(
-        ma_buy=25, offset_ma_buy=1, offset_cl_buy=25, buy_operator=">",
-        ma_sell=25, offset_ma_sell=1, offset_cl_sell=1, sell_operator="<",
-        use_trend_in_buy=True, use_trend_in_sell=False,
-        ma_compare_short=0, ma_compare_long=0, offset_compare_short=1, offset_compare_long=1,
-        stop_loss_pct=0.0, take_profit_pct=0.0,
-        initial_cash=initial_cash, strategy_behavior=strategy_behavior, min_hold_days=min_hold_days
+        "signal_ticker": "SOXL", "trade_ticker": "SOXL",
+        "offset_cl_buy": 1, "buy_operator": ">", "offset_ma_buy": 50, "ma_buy": 50,
+        "offset_cl_sell": 50, "sell_operator": "<", "offset_ma_sell": 50, "ma_sell": 10, 
+        "use_trend_in_buy": True, "use_trend_in_sell": True,
+        "offset_compare_short": 20, "ma_compare_short": 50,
+        "offset_compare_long": 50, "ma_compare_long": 50,         
+        "stop_loss_pct": 15.0, "take_profit_pct": 20.0
     )
 
     # 후보 MA 윈도우 풀(최소화): 속도 위해 집합으로 모아 계산
@@ -2190,4 +2191,5 @@ with tab3:
                         "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
