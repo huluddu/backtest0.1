@@ -2,14 +2,11 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 import datetime
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
-import itertools
 import random
 from pykrx import stock
 from functools import lru_cache
 import numpy as np
-import random
 import re
 
 # ============== Page Setup & Header (UI only) ==============
@@ -319,7 +316,7 @@ def check_signal_today(
     *,                       # ← 키워드 전용
     strategy_behavior="1. 포지션 없으면 매수 / 보유 중이면 매도",
     min_hold_days=0
-):
+    ):
 
     df = df.copy()
     df = df.sort_values("Date").reset_index(drop=True)
@@ -359,7 +356,7 @@ def check_signal_today(
 
     st.write(f"📈 추세 조건: {trend_msg}")
 
-# ▶ 부호/추세 반영한 판정
+    # ▶ 부호/추세 반영한 판정
     buy_base  = (cl_b > ma_b) if (buy_operator == ">") else (cl_b < ma_b)
     sell_base = (cl_s < ma_s) if (sell_operator == "<") else (cl_s > ma_s)
 
@@ -433,7 +430,7 @@ def check_signal_today(
     if not (last_buy_date or last_sell_date or last_hold_date):
         st.warning("❗최근 조건에 부합하는 날을 찾지 못했습니다.")
 
-### 오늘의 시그널 (실시간) ###
+    ### 오늘의 시그널 (실시간) ###
 
 def check_signal_today_realtime(
     df_daily: pd.DataFrame,
@@ -794,8 +791,8 @@ def backtest_fast(
     use_trend_in_buy=True,
     use_trend_in_sell=False,
     buy_operator=">", sell_operator="<",
-    execution_lag_days=0,              # 남겨두되 사용하지 않음 (호환성)
-    execution_price_mode="same_close"  # "same_open" | "same_close" | ("next_*"도 동일 처리)
+    execution_lag_days=0,
+    execution_price_mode="same_close"
 ):
     import numpy as np
     import pandas as pd
@@ -804,7 +801,6 @@ def backtest_fast(
     if n == 0:
         return {}
 
-    # MA 시퀀스
     ma_buy_arr  = ma_dict_sig.get(ma_buy)
     ma_sell_arr = ma_dict_sig.get(ma_sell)
     ma_s_arr = ma_dict_sig.get(ma_compare_short) if ma_compare_short else None
@@ -816,18 +812,14 @@ def backtest_fast(
         (offset_compare_short or 0), (offset_compare_long or 0)
     )
 
-    # 트레이드 OHLC
     xO = base["Open_trd"].to_numpy(dtype=float)
     xH = base["High_trd"].to_numpy(dtype=float)
     xL = base["Low_trd"].to_numpy(dtype=float)
     xC_sig = x_sig
     xC_trd = x_trd
 
-    # 모드 정규화: "next_*" 를 "same_*" 로 간주
-    if execution_price_mode in ("next_close",):
+    if execution_price_mode not in ("same_open", "same_close"):
         execution_price_mode = "same_close"
-    elif execution_price_mode in ("next_open",):
-        execution_price_mode = "same_open"
 
     def _fill_buy(px: float) -> float:
         return px * (1 + (slip_bps + fee_bps) / 10000.0)
@@ -863,23 +855,24 @@ def backtest_fast(
     hold_days = 0
     logs = []
     asset_curve = []
-    sb = strategy_behavior[:1]  # "1","2","3"
+    sb = (strategy_behavior or "1")[:1]  # "1","2","3"
 
     for i in range(idx0, n):
         just_bought = False
         exec_price = None
         signal = "HOLD"
+        reason = None
 
         open_today  = xO[i]
         high_today  = xH[i]
         low_today   = xL[i]
         close_today = xC_trd[i]
 
-        # 조건 계산
+        # 조건 계산 (오프셋 기준)
         try:
-            cl_b = float(xC_sig[i - offset_cl_buy])
+            cl_b = float(xC_sig[i - offset_cl_buy])   # BUY 판단용 종가
             ma_b = float(ma_buy_arr[i - offset_ma_buy])
-            cl_s = float(xC_sig[i - offset_cl_sell])
+            cl_s = float(xC_sig[i - offset_cl_sell])  # SELL 판단용 종가
             ma_s = float(ma_sell_arr[i - offset_ma_sell])
         except Exception:
             total = cash + (position * close_today if position > 0.0 else 0.0)
@@ -896,7 +889,9 @@ def backtest_fast(
                 "손절발동": False,
                 "익절발동": False,
                 "추세만족": None,
-                "보유일": hold_days
+                "보유일": hold_days,
+                "양시그널": False,
+                "이유": "데이터부족"
             })
             continue
 
@@ -911,6 +906,7 @@ def backtest_fast(
 
         buy_condition  = (buy_base and trend_ok) if use_trend_in_buy  else buy_base
         sell_condition = (sell_base and (not trend_ok)) if use_trend_in_sell else sell_base
+        both_condition = bool(buy_condition and sell_condition)
 
         # 보유 중 장중 stop/take 우선
         stop_hit = take_hit = False
@@ -926,6 +922,7 @@ def backtest_fast(
             buy_price = None
             signal = "SELL"
             exec_price = fill
+            reason = f"{'손절' if stop_hit else '익절'}(px={px:.2f})"
 
         # 즉시 매도(규칙)
         if position > 0.0 and signal == "HOLD":
@@ -938,16 +935,22 @@ def backtest_fast(
                 buy_price = None
                 signal = "SELL"
                 exec_price = fill
+                cmp_op = "<" if sell_operator == "<" else ">"
+                trend_txt = "역추세통과" if (use_trend_in_sell and not trend_ok) else ("조건충족" if sell_condition else "조건미충족")
+                reason = f"규칙매도: 종가({cl_s:.2f}){cmp_op}MA({ma_s:.2f}) ({trend_txt})"
+            elif sell_condition and not can_sell:
+                reason = f"보유일미달({hold_days} < {int(min_hold_days)})"
 
-        # 즉시 매수
+        # 즉시 매수(규칙)
         if position == 0.0 and signal == "HOLD":
             do_buy = False
             if sb == "1":
                 do_buy = buy_condition
-            elif sb == "2":
+            elif sb in ("2", "3"):
                 do_buy = buy_condition and not sell_condition
-            elif sb == "3":
-                do_buy = buy_condition and not sell_condition
+                if sb == "3":
+                    do_buy = False
+
             if do_buy:
                 base_px = open_today if execution_price_mode == "same_open" else close_today
                 fill = _fill_buy(base_px)
@@ -956,14 +959,23 @@ def backtest_fast(
                 buy_price = fill
                 signal = "BUY"
                 exec_price = fill
-                just_bought = True
+                cmp_op = ">" if buy_operator == ">" else "<"
+                trend_txt = "추세통과" if (use_trend_in_buy and trend_ok) else ("조건충족" if buy_condition else "조건미충족")
+                both_txt = " & 양시그널" if both_condition else ""
+                reason = f"규칙매수: 종가({cl_b:.2f}){cmp_op}MA({ma_b:.2f}) ({trend_txt}){both_txt}"
 
-        # 보유일
+        # 보유일 갱신
         if position > 0.0:
             if not just_bought:
                 hold_days += 1
         else:
             hold_days = 0
+
+        # HOLD 사유 보강(조건미충족 시 현재 비교값 표시)
+        if signal == "HOLD" and reason is None:
+            buy_ok_txt  = f"종가({cl_b:.2f}){'>' if buy_operator == '>' else '<'}MA({ma_b:.2f})"
+            sell_ok_txt = f"종가({cl_s:.2f}){'<' if sell_operator == '<' else '>'}MA({ma_s:.2f})"
+            reason = f"조건미충족(매수:{buy_ok_txt}={bool(buy_base)}, 매도:{sell_ok_txt}={bool(sell_base)})" if position==0.0 else "보유중"
 
         total = cash + (position * close_today if position > 0.0 else 0.0)
         asset_curve.append(total)
@@ -981,14 +993,12 @@ def backtest_fast(
             "익절발동": bool(take_hit),
             "추세만족": bool(trend_ok),
             "보유일": hold_days,
-            "양시그널": bool(buy_condition and sell_condition)
+            "양시그널": both_condition,
+            "이유": reason
         })
 
     if not asset_curve:
         return {}
-
-    import numpy as np
-    import pandas as pd
 
     mdd_series = pd.Series(asset_curve)
     peak = mdd_series.cummax()
@@ -996,7 +1006,7 @@ def backtest_fast(
     mdd = float(drawdown.min() * 100)
 
     mdd_pos = int(np.argmin(drawdown.values))
-    df_dates = base["Date"].iloc[-len(asset_curve):].reset_index(drop=True)
+    df_dates = base["Date"].iloc[-len(mdd_series):].reset_index(drop=True)
     mdd_date = pd.to_datetime(df_dates.iloc[mdd_pos])
 
     recovery_date = None
@@ -1006,7 +1016,6 @@ def backtest_fast(
             recovery_date = pd.to_datetime(df_dates.iloc[j])
             break
 
-    # 페어 수익
     trade_pairs, cache_buy = [], None
     for log in logs:
         if log["신호"] == "BUY":
@@ -1033,8 +1042,9 @@ def backtest_fast(
 
     total_trades = len(trade_returns)
     win_rate = round((wins / total_trades) * 100, 2) if total_trades else 0.0
-    avg_trade_return_pct = round((np.mean(trade_returns) * 100), 2) if trade_returns else 0.0
-    median_trade_return_pct = round((np.median(trade_returns) * 100), 2) if trade_returns else 0.0
+    import numpy as _np
+    avg_trade_return_pct = round((_np.mean(trade_returns) * 100), 2) if trade_returns else 0.0
+    median_trade_return_pct = round((_np.median(trade_returns) * 100), 2) if trade_returns else 0.0
     profit_factor = round((gross_profit / gross_loss), 2) if gross_loss > 0 else (float("inf") if gross_profit > 0 else 0.0)
 
     initial_cash_val = float(initial_cash)
@@ -1054,6 +1064,79 @@ def backtest_fast(
         "매매 로그": logs,
         "최종 자산": round(final_asset)
     }
+
+
+
+    # ===== 루프 종료 후: 요약 계산 =====
+    if not asset_curve:
+        return {}
+
+    mdd_series = pd.Series(asset_curve)
+    peak = mdd_series.cummax()
+    drawdown = mdd_series / peak - 1.0
+    mdd = float(drawdown.min() * 100)
+
+    mdd_pos = int(np.argmin(drawdown.values))
+    df_dates = base["Date"].iloc[-len(mdd_series):].reset_index(drop=True)
+    mdd_date = pd.to_datetime(df_dates.iloc[mdd_pos])
+
+    recovery_date = None
+    peak_at_mdd = peak.iloc[mdd_pos]
+    for j in range(mdd_pos, len(mdd_series)):
+        if mdd_series.iloc[j] >= peak_at_mdd:
+            recovery_date = pd.to_datetime(df_dates.iloc[j])
+            break
+
+    # 트레이드 페어 성과
+    trade_pairs, cache_buy = [], None
+    for log in logs:
+        if log["신호"] == "BUY":
+            cache_buy = log
+        elif log["신호"] == "SELL" and cache_buy:
+            trade_pairs.append((cache_buy, log))
+            cache_buy = None
+
+    wins = 0
+    trade_returns = []
+    gross_profit = 0.0
+    gross_loss = 0.0
+    for b, s in trade_pairs:
+        pb = b.get("체결가") or b.get("종가")
+        ps = s.get("체결가") or s.get("종가")
+        if (pb is None) or (ps is None):
+            continue
+        r = (ps - pb) / pb
+        trade_returns.append(r)
+        if r >= 0:
+            wins += 1; gross_profit += r
+        else:
+            gross_loss += (-r)
+
+    total_trades = len(trade_returns)
+    win_rate = round((wins / total_trades) * 100, 2) if total_trades else 0.0
+    import numpy as _np
+    avg_trade_return_pct = round((_np.mean(trade_returns) * 100), 2) if trade_returns else 0.0
+    median_trade_return_pct = round((_np.median(trade_returns) * 100), 2) if trade_returns else 0.0
+    profit_factor = round((gross_profit / gross_loss), 2) if gross_loss > 0 else (float("inf") if gross_profit > 0 else 0.0)
+
+    initial_cash_val = float(initial_cash)
+    final_asset = float(asset_curve[-1])
+
+    return {
+        "평균 거래당 수익률 (%)": avg_trade_return_pct,
+        "수익률 (%)": round((final_asset - initial_cash_val) / initial_cash_val * 100, 2),
+        "승률 (%)": win_rate,
+        "MDD (%)": round(mdd, 2),
+        "중앙값 거래당 수익률 (%)": median_trade_return_pct,
+        "Profit Factor": profit_factor,
+        "총 매매 횟수": total_trades,
+        "MDD 발생일": mdd_date.strftime("%Y-%m-%d"),
+        "MDD 회복일": recovery_date.strftime("%Y-%m-%d") if recovery_date is not None else "미회복",
+        "회복 기간 (일)": (recovery_date - mdd_date).days if recovery_date is not None else None,
+        "매매 로그": logs,
+        "최종 자산": round(final_asset)
+    }
+
 
 
 # ===== Auto Optimizer# ===== Auto Optimizer (Train/Test) =====
@@ -1159,7 +1242,7 @@ def auto_search_train_test(
     strategy_behavior="1. 포지션 없으면 매수 / 보유 중이면 매도",
     min_hold_days=0,
     execution_lag_days=1,
-    execution_price_mode="next_close",
+    execution_price_mode="same_close",
     constraints=None,               # {"min_trades": 5, "min_winrate": 0.0, "max_mdd": None}
 ):
     """랜덤 탐색 기반 자동 최적화 + Train/Test 일반화 성능 확인."""
@@ -1351,7 +1434,7 @@ def run_random_simulations_fast(
             use_trend_in_sell=use_trend_in_sell,
             buy_operator=buy_operator, sell_operator=sell_operator,
             execution_lag_days=1,
-            execution_price_mode="next_close"
+            execution_price_mode="same_close"
         )
         
         if not r:
@@ -1676,7 +1759,7 @@ with tab3:
             buy_operator=buy_operator,
             sell_operator=sell_operator,
             execution_lag_days=1,
-            execution_price_mode="next_close"
+            execution_price_mode="same_close"
         )
 
         if result:
@@ -2023,7 +2106,7 @@ with tab3:
                 strategy_behavior=strategy_behavior,
                 min_hold_days=min_hold_days,
                 execution_lag_days=1,
-                execution_price_mode="next_close",
+                execution_price_mode="same_close",
                 constraints={"min_trades": int(min_trades), "min_winrate": float(min_winrate), "max_mdd": max_mdd}
             )
 
