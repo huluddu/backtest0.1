@@ -537,14 +537,15 @@ def check_signal_today_realtime(
     
 ##################################
 
+
 # ✅ 전략 프리셋 목록 정의
 PRESETS = {
     "SOXL 전략1": {
         "signal_ticker": "SOXL", "trade_ticker": "SOXL",
-        "ma_buy": 15, "offset_ma_buy": 15, "offset_cl_buy": 5,
-        "ma_sell": 25, "offset_ma_sell": 1, "offset_cl_sell": 5,
+        "ma_buy": 15, "offset_ma_buy": 15, "offset_cl_buy": 6,
+        "ma_sell": 25, "offset_ma_sell": 2, "offset_cl_sell": 6,
         "ma_compare_short": 5, "ma_compare_long": 5,
-        "offset_compare_short": 25, "offset_compare_long": 1,
+        "offset_compare_short": 26, "offset_compare_long": 2,
         "buy_operator": "<", "sell_operator": "<",
         "use_trend_in_buy": True, "use_trend_in_sell": True,
         "stop_loss_pct": 0.0, "take_profit_pct": 30.0
@@ -552,73 +553,64 @@ PRESETS = {
 
     "SOXL 전략2": {
         "signal_ticker": "SOXL", "trade_ticker": "SOXL",
-        "offset_cl_buy": 1, "buy_operator": "<", "offset_ma_buy": 5, "ma_buy": 25,
-        "offset_cl_sell": 1, "sell_operator": "<", "offset_ma_sell": 15, "ma_sell": 25,
+        "offset_cl_buy": 2, "buy_operator": "<", "offset_ma_buy": 6, "ma_buy": 25,
+        "offset_cl_sell": 2, "sell_operator": "<", "offset_ma_sell": 16, "ma_sell": 25,
         "use_trend_in_buy": True, "use_trend_in_sell": True,
-        "offset_compare_short": 25, "ma_compare_short": 10,
-        "offset_compare_long": 1, "ma_compare_long": 10,
+        "offset_compare_short": 26, "ma_compare_short": 10,
+        "offset_compare_long": 2, "ma_compare_long": 10,
         "stop_loss_pct": 0.0, "take_profit_pct": 0.0
     },
 
     "SOXL 전략3": {
         "signal_ticker": "SOXL", "trade_ticker": "SOXL",
-        "offset_cl_buy": 1, "buy_operator": "<", "offset_ma_buy": 25, "ma_buy": 1,
-        "offset_cl_sell": 1, "sell_operator": "<", "offset_ma_sell": 50, "ma_sell": 10,
-        "use_trend_in_buy": True, "use_trend_in_sell": True,
-        "offset_compare_short": 15, "ma_compare_short": 5,
-        "offset_compare_long": 5, "ma_compare_long": 10,
-        "stop_loss_pct": 30.0, "take_profit_pct": 10.0
+        "offset_cl_buy": 20, "buy_operator": "<", "offset_ma_buy": 20, "ma_buy": 20,
+        "offset_cl_sell": 50, "sell_operator": "<", "offset_ma_sell": 20, "ma_sell": 50,
+        "use_trend_in_buy": False, "use_trend_in_sell": True,
+        "offset_compare_short": 10, "ma_compare_short": 1,
+        "offset_compare_long": 50, "ma_compare_long": 1,
+        "stop_loss_pct": 15.0, "take_profit_pct": 15.0
     },
   
     "TSLL 전략": {
         "signal_ticker": "TSLL", "trade_ticker": "TSLL",
-        "offset_cl_buy": 5, "buy_operator": ">", "offset_ma_buy": 15, "ma_buy": 20,
-        "offset_cl_sell": 1, "sell_operator": "<", "offset_ma_sell": 5, "ma_sell": 10,
+        "offset_cl_buy": 6, "buy_operator": ">", "offset_ma_buy": 16, "ma_buy": 20,
+        "offset_cl_sell": 2, "sell_operator": "<", "offset_ma_sell": 6, "ma_sell": 10,
         "use_trend_in_buy": True, "use_trend_in_sell": True,
-        "offset_compare_short": 25, "ma_compare_short": 15,
-        "offset_compare_long": 1, "ma_compare_long": 15,         
+        "offset_compare_short": 26, "ma_compare_short": 15,
+        "offset_compare_long": 2, "ma_compare_long": 15,         
         "stop_loss_pct": 0.0, "take_profit_pct": 0.0
     },
 
     "TSLL2 전략": {
         "signal_ticker": "TSLL", "trade_ticker": "TSLL",
-        "offset_cl_buy": 5, "buy_operator": ">", "offset_ma_buy": 15, "ma_buy": 20,
-        "offset_cl_sell": 1, "sell_operator": "<", "offset_ma_sell": 5, "ma_sell": 10,
+        "offset_cl_buy": 6, "buy_operator": ">", "offset_ma_buy": 16, "ma_buy": 20,
+        "offset_cl_sell": 2, "sell_operator": "<", "offset_ma_sell": 6, "ma_sell": 10,
         "use_trend_in_buy": False, "use_trend_in_sell": True,
-        "offset_compare_short": 25, "ma_compare_short": 25,
-        "offset_compare_long": 15, "ma_compare_long": 25,         
+        "offset_compare_short": 26, "ma_compare_short": 25,
+        "offset_compare_long": 16, "ma_compare_long": 25,         
         "stop_loss_pct": 0.0, "take_profit_pct": 0.0
     },
 
     "GGLL 전략": {
         "signal_ticker": "GGLL", "trade_ticker": "GGLL",
-        "offset_cl_buy": 15, "buy_operator": ">", "offset_ma_buy": 15, "ma_buy": 5,
-        "offset_cl_sell": 1, "sell_operator": "<", "offset_ma_sell": 5, "ma_sell": 25,
+        "offset_cl_buy": 16, "buy_operator": ">", "offset_ma_buy": 16, "ma_buy": 5,
+        "offset_cl_sell": 2, "sell_operator": "<", "offset_ma_sell": 6, "ma_sell": 25,
         "use_trend_in_buy": True, "use_trend_in_sell": True,
-        "offset_compare_short": 15, "ma_compare_short": 25,
-        "offset_compare_long": 25, "ma_compare_long": 25,         
+        "offset_compare_short": 16, "ma_compare_short": 25,
+        "offset_compare_long": 26, "ma_compare_long": 25,         
         "stop_loss_pct": 0.0, "take_profit_pct": 15.0
     },
 
     "BITX 전략": {
         "signal_ticker": "BITX", "trade_ticker": "BITX",
-        "offset_cl_buy": 15, "buy_operator": ">", "offset_ma_buy": 25, "ma_buy": 5,
-        "offset_cl_sell": 25, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 15,
+        "offset_cl_buy": 16, "buy_operator": ">", "offset_ma_buy": 26, "ma_buy": 5,
+        "offset_cl_sell": 26, "sell_operator": ">", "offset_ma_sell": 2, "ma_sell": 15,
         "use_trend_in_buy": True, "use_trend_in_sell": True,
-        "offset_compare_short": 25, "ma_compare_short": 15,
-        "offset_compare_long": 5, "ma_compare_long": 15,         
+        "offset_compare_short": 26, "ma_compare_short": 15,
+        "offset_compare_long": 6, "ma_compare_long": 15,         
         "stop_loss_pct": 0.0, "take_profit_pct": 0.0
     },
 
-    "ETHU 전략": {
-        "signal_ticker": "ETHU", "trade_ticker": "ETHU",
-        "offset_cl_buy": 15, "buy_operator": "<", "offset_ma_buy": 5, "ma_buy": 25,
-        "offset_cl_sell": 1, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 10,
-        "use_trend_in_buy": True, "use_trend_in_sell": False,
-        "offset_compare_short": 1, "ma_compare_short": 20,
-        "offset_compare_long": 15, "ma_compare_long": 15,         
-        "stop_loss_pct": 0.0, "take_profit_pct": 10.0
-    },
 
     "SOXS 전략": {
         "signal_ticker": "SOXS", "trade_ticker": "SOXS",
@@ -642,54 +634,55 @@ PRESETS = {
 
     "453850 ACE 미국30년국채 전략": {
         "signal_ticker": "453850", "trade_ticker": "453850",
-        "offset_cl_buy": 15, "buy_operator": "<", "offset_ma_buy": 25, "ma_buy": 15,
-        "offset_cl_sell": 25, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 20,
+        "offset_cl_buy": 16, "buy_operator": "<", "offset_ma_buy": 26, "ma_buy": 15,
+        "offset_cl_sell": 26, "sell_operator": ">", "offset_ma_sell": 2, "ma_sell": 20,
         "use_trend_in_buy": True, "use_trend_in_sell": False,
-        "offset_compare_short": 1, "ma_compare_short": 15,
-        "offset_compare_long": 25, "ma_compare_long": 15,         
+        "offset_compare_short": 2, "ma_compare_short": 15,
+        "offset_compare_long": 26, "ma_compare_long": 15,         
         "stop_loss_pct": 0.0, "take_profit_pct": 10.0
     },
           
     "465580 ACE미국빅테크TOP7PLUS": {
         "signal_ticker": "465580", "trade_ticker": "465580",
-        "offset_cl_buy": 1, "buy_operator": ">", "offset_ma_buy": 1, "ma_buy": 5,
-        "offset_cl_sell": 1, "sell_operator": "<", "offset_ma_sell": 1, "ma_sell": 25, 
+        "offset_cl_buy": 2, "buy_operator": ">", "offset_ma_buy": 2, "ma_buy": 5,
+        "offset_cl_sell": 2, "sell_operator": "<", "offset_ma_sell": 2, "ma_sell": 25, 
         "use_trend_in_buy": False, "use_trend_in_sell": True,
-        "offset_compare_short": 5, "ma_compare_short": 10,
-        "offset_compare_long": 1, "ma_compare_long": 10,         
+        "offset_compare_short": 6, "ma_compare_short": 10,
+        "offset_compare_long": 2, "ma_compare_long": 10,         
         "stop_loss_pct": 0.0, "take_profit_pct": 10.0
     },
 
     "390390 KODEX미국반도체": {
         "signal_ticker": "390390", "trade_ticker": "390390",
-        "offset_cl_buy": 5, "buy_operator": "<", "offset_ma_buy": 1, "ma_buy": 5,
-        "offset_cl_sell": 25, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 20, 
+        "offset_cl_buy": 6, "buy_operator": "<", "offset_ma_buy": 2, "ma_buy": 5,
+        "offset_cl_sell": 26, "sell_operator": ">", "offset_ma_sell": 2, "ma_sell": 20, 
         "use_trend_in_buy": False, "use_trend_in_sell": True,
-        "offset_compare_short": 5, "ma_compare_short": 25,
-        "offset_compare_long": 1, "ma_compare_long": 25,
+        "offset_compare_short": 6, "ma_compare_short": 25,
+        "offset_compare_long": 2, "ma_compare_long": 25,
         "stop_loss_pct": 0.0, "take_profit_pct": 10.0
     },
 
     "371460 TIGER차이나전기차SOLACTIVE": {
         "signal_ticker": "371460", "trade_ticker": "371460",
-        "offset_cl_buy": 1, "buy_operator": ">", "offset_ma_buy": 5, "ma_buy": 10,
-        "offset_cl_sell": 15, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 5, 
+        "offset_cl_buy": 2, "buy_operator": ">", "offset_ma_buy": 6, "ma_buy": 10,
+        "offset_cl_sell": 16, "sell_operator": ">", "offset_ma_sell": 2, "ma_sell": 5, 
         "use_trend_in_buy": True, "use_trend_in_sell": True,
-        "offset_compare_short": 5, "ma_compare_short": 15,
-        "offset_compare_long": 15, "ma_compare_long": 10,         
+        "offset_compare_short": 6, "ma_compare_short": 15,
+        "offset_compare_long": 16, "ma_compare_long": 10,         
         "stop_loss_pct": 0.0, "take_profit_pct": 10.0
     },
 
     "483280 AITOP10커브드콜": {
         "signal_ticker": "483280", "trade_ticker": "483280",
-        "offset_cl_buy": 25, "buy_operator": ">", "offset_ma_buy": 25, "ma_buy": 20,
-        "offset_cl_sell": 25, "sell_operator": ">", "offset_ma_sell": 5, "ma_sell": 20, 
+        "offset_cl_buy": 26, "buy_operator": ">", "offset_ma_buy": 26, "ma_buy": 20,
+        "offset_cl_sell": 26, "sell_operator": ">", "offset_ma_sell": 6, "ma_sell": 20, 
         "use_trend_in_buy": True, "use_trend_in_sell": True,
-        "offset_compare_short": 1, "ma_compare_short": 20,
-        "offset_compare_long": 15, "ma_compare_long": 5,         
+        "offset_compare_short": 2, "ma_compare_short": 20,
+        "offset_compare_long": 16, "ma_compare_long": 5,         
         "stop_loss_pct": 0.0, "take_profit_pct": 0.0
     },
 }
+
 
 
 # === PRESETS 전체 오늘 시그널 일괄 체크 ===
@@ -2186,10 +2179,10 @@ with tab3:
                 with st.expander("🔥 베스트 파라미터 1개 즉시 적용(선택)", expanded=False):
                     best = df_auto.iloc[0].to_dict()
                     st.write({k: best[k] for k in [
-                        "offset_cl_buy","buy_operator","offset_ma_buy","ma_buy",
-                        "offset_cl_sell","sell_operator","offset_ma_sell","ma_sell",
+                        "ma_buy","offset_ma_buy","offset_cl_buy","buy_operator",
+                        "ma_sell","offset_ma_sell","offset_cl_sell","sell_operator",
                         "use_trend_in_buy","use_trend_in_sell",
-                        "offset_compare_short","ma_compare_short",
-                        "offset_compare_long","ma_compare_long",
+                        "ma_compare_short","ma_compare_long",
+                        "offset_compare_short","offset_compare_long",
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
