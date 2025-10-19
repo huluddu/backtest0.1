@@ -577,7 +577,7 @@ def check_signal_today_realtime(
 
 # ✅ 전략 프리셋 목록 정의
 PRESETS = {
-    "SOXL 전략1": {
+    "SOXL 최초": {
         "signal_ticker": "SOXL", "trade_ticker": "SOXL",
         "ma_buy": 15, "offset_ma_buy": 15, "offset_cl_buy": 6,
         "ma_sell": 25, "offset_ma_sell": 2, "offset_cl_sell": 6,
@@ -588,17 +588,7 @@ PRESETS = {
         "stop_loss_pct": 0.0, "take_profit_pct": 30.0
     },
 
-    "SOXL 전략2": {
-        "signal_ticker": "SOXL", "trade_ticker": "SOXL",
-        "offset_cl_buy": 2, "buy_operator": "<", "offset_ma_buy": 6, "ma_buy": 25,
-        "offset_cl_sell": 2, "sell_operator": "<", "offset_ma_sell": 16, "ma_sell": 25,
-        "use_trend_in_buy": True, "use_trend_in_sell": True,
-        "offset_compare_short": 26, "ma_compare_short": 10,
-        "offset_compare_long": 2, "ma_compare_long": 10,
-        "stop_loss_pct": 0.0, "take_profit_pct": 0.0
-    },
-
-    "SOXL 전략3": {
+    "SOXL 도전 전략": {
         "signal_ticker": "SOXL", "trade_ticker": "SOXL",
         "offset_cl_buy": 20, "buy_operator": "<", "offset_ma_buy": 20, "ma_buy": 20,
         "offset_cl_sell": 50, "sell_operator": "<", "offset_ma_sell": 20, "ma_sell": 50,
@@ -608,7 +598,7 @@ PRESETS = {
         "stop_loss_pct": 15.0, "take_profit_pct": 15.0
     },
   
-    "SOXL 전략4": {
+    "SOXL 안전 전략": {
         "signal_ticker": "SOXL", "trade_ticker": "SOXL",
         "offset_cl_buy": 20, "buy_operator": ">", "offset_ma_buy": 50, "ma_buy": 10,
         "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 10,
@@ -2233,6 +2223,7 @@ with tab3:
                         "offset_compare_short","ma_compare_short","offset_compare_long","ma_compare_long",                        
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
