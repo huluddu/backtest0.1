@@ -608,7 +608,7 @@ PRESETS = {
         "stop_loss_pct": 15.0, "take_profit_pct": 15.0
     },
   
-    "TSLL 전략": {
+    "TSLL 안전 전략": {
         "signal_ticker": "TSLL", "trade_ticker": "TSLL",
         "offset_cl_buy": 6, "buy_operator": ">", "offset_ma_buy": 16, "ma_buy": 20,
         "offset_cl_sell": 2, "sell_operator": "<", "offset_ma_sell": 6, "ma_sell": 10,
@@ -617,15 +617,15 @@ PRESETS = {
         "offset_compare_long": 2, "ma_compare_long": 15,         
         "stop_loss_pct": 0.0, "take_profit_pct": 0.0
     },
-
-    "TSLL2 전략": {
+    
+    "TSLL 도전 전략": {
         "signal_ticker": "TSLL", "trade_ticker": "TSLL",
-        "offset_cl_buy": 6, "buy_operator": ">", "offset_ma_buy": 16, "ma_buy": 20,
-        "offset_cl_sell": 2, "sell_operator": "<", "offset_ma_sell": 6, "ma_sell": 10,
-        "use_trend_in_buy": False, "use_trend_in_sell": True,
-        "offset_compare_short": 26, "ma_compare_short": 25,
-        "offset_compare_long": 16, "ma_compare_long": 25,         
-        "stop_loss_pct": 0.0, "take_profit_pct": 0.0
+        "offset_cl_buy": 10, "buy_operator": "<", "offset_ma_buy": 10, "ma_buy": 20,
+        "offset_cl_sell": 50, "sell_operator": "<", "offset_ma_sell": 50, "ma_sell": 20,
+        "use_trend_in_buy": Ture, "use_trend_in_sell": True,
+        "offset_compare_short": 1, "ma_compare_short": 5,
+        "offset_compare_long": 25, "ma_compare_long": 5,         
+        "stop_loss_pct": 15.0, "take_profit_pct": 15.0
     },
 
     "GGLL 전략": {
@@ -2217,10 +2217,10 @@ with tab3:
                 with st.expander("🔥 베스트 파라미터 1개 즉시 적용(선택)", expanded=False):
                     best = df_auto.iloc[0].to_dict()
                     st.write({k: best[k] for k in [
-                        "ma_buy","offset_ma_buy","offset_cl_buy","buy_operator",
-                        "ma_sell","offset_ma_sell","offset_cl_sell","sell_operator",
+                        "offset_cl_buy","buy_operator","offset_ma_buy","ma_buy",
+                        "offset_cl_sell","sell_operator","offset_ma_sell","ma_sell",
                         "use_trend_in_buy","use_trend_in_sell",
-                        "ma_compare_short","ma_compare_long",
-                        "offset_compare_short","offset_compare_long",
+                        "offset_compare_short","ma_compare_short","offset_compare_long","ma_compare_long",                        
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
