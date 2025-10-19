@@ -622,7 +622,7 @@ PRESETS = {
         "signal_ticker": "TSLL", "trade_ticker": "TSLL",
         "offset_cl_buy": 10, "buy_operator": "<", "offset_ma_buy": 10, "ma_buy": 20,
         "offset_cl_sell": 50, "sell_operator": "<", "offset_ma_sell": 50, "ma_sell": 20,
-        "use_trend_in_buy": Ture, "use_trend_in_sell": True,
+        "use_trend_in_buy": True, "use_trend_in_sell": True,
         "offset_compare_short": 1, "ma_compare_short": 5,
         "offset_compare_long": 25, "ma_compare_long": 5,         
         "stop_loss_pct": 15.0, "take_profit_pct": 15.0
@@ -2223,4 +2223,5 @@ with tab3:
                         "offset_compare_short","ma_compare_short","offset_compare_long","ma_compare_long",                        
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
