@@ -712,142 +712,120 @@ PRESETS = {
 
 
 
-# === PRESETS 전체 오늘 시그널 일괄 체크 (개선판) ===
-def summarize_signal_today(
-    df, p,
-    *, 
-    force_today_offsets: bool = False,     # True면 모든 오프셋 0으로 강제(오늘 기준)
-    use_last_valid_ma: bool = True,        # True면 "MA가 유효한 마지막 행"을 오늘로 간주
-    return_diag: bool = False              # True면 basis/latest 날짜를 추가로 반환(호출부 선택)
-):
+# === PRESETS 전체 오늘 시그널 일괄 체크 (check_signal_today와 동일한 판정 규칙) ===
+def summarize_signal_today(df, p):
     """
-    전날로 밀리는 현상을 방지:
-      - force_today_offsets=True  이면 모든 오프셋을 0으로 강제.
-      - use_last_valid_ma=True    이면 MA가 NaN이 아닌 마지막 인덱스를 오늘로 간주.
-    기존 리턴 구조(label, last_buy, last_sell, last_hold)는 그대로 유지.
-    return_diag=True일 때만 {'basis_date','latest_date'}를 추가로 포함.
+    check_signal_today와 '완전히 동일한' 규칙으로
+    (1) 오늘 시그널 라벨과
+    (2) 최근 BUY/SELL/HOLD 날짜
+    를 계산해 반환합니다.
+
+    - 인덱싱 방식: i=0에서 음수 인덱싱 사용 (끝에서 offset만큼 뒤)
+    - 추세: ms >= ml
+    - offset_compare_short/long 기본 1 (check_signal_today와 동일)
+    - 프리셋 p의 오프셋/부호/추세 플래그를 그대로 사용
     """
     import pandas as pd
 
-    if df is None or len(df) == 0:
-        out = {"label": "데이터없음", "last_buy": None, "last_sell": None, "last_hold": None}
-        return out
+    if df is None or df.empty:
+        return {"label": "데이터없음", "last_buy": None, "last_sell": None, "last_hold": None}
 
-    # 원본 보호
-    p = dict(p)
+    # 프리셋 파라미터 (기본값도 check_signal_today에 맞춤)
+    ma_buy  = int(p.get("ma_buy", 50))
+    ma_sell = int(p.get("ma_sell", 10))
+    offset_ma_buy  = int(p.get("offset_ma_buy", 50))
+    offset_ma_sell = int(p.get("offset_ma_sell", 50))
+    offset_cl_buy  = int(p.get("offset_cl_buy", 1))
+    offset_cl_sell = int(p.get("offset_cl_sell", 50))
 
-    # A) 오늘 강제: 모든 오프셋 0
-    if force_today_offsets:
-        p.update({
-            "offset_cl_buy": 0, "offset_ma_buy": 0,
-            "offset_cl_sell": 0, "offset_ma_sell": 0,
-            "offset_compare_short": 0, "offset_compare_long": 0,
-        })
+    buy_operator  = p.get("buy_operator",  ">")
+    sell_operator = p.get("sell_operator", "<")
 
-    # 정렬/타입 정리
+    use_trend_in_buy  = bool(p.get("use_trend_in_buy",  True))
+    use_trend_in_sell = bool(p.get("use_trend_in_sell", False))
+
+    ma_compare_short = p.get("ma_compare_short", None)
+    ma_compare_long  = p.get("ma_compare_long",  None)
+    if ma_compare_short is not None:
+        ma_compare_short = int(ma_compare_short)
+        if ma_compare_short <= 0:
+            ma_compare_short = None
+    if ma_compare_long is not None:
+        ma_compare_long = int(ma_compare_long)
+        if ma_compare_long <= 0:
+            ma_compare_long = None
+
+    offset_compare_short = int(p.get("offset_compare_short", 1))
+    offset_compare_long  = int(p.get("offset_compare_long",  1))
+
+    # 데이터 정규화
     df = df.copy().sort_values("Date").reset_index(drop=True)
     df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
 
-    # MA 계산
-    ma_buy  = int(p.get("ma_buy", 50))
-    ma_sell = int(p.get("ma_sell", 10))
+    # 이평
     df["MA_BUY"]  = df["Close"].rolling(ma_buy).mean()
     df["MA_SELL"] = df["Close"].rolling(ma_sell).mean()
+    if ma_compare_short and ma_compare_long:
+        df["MA_SHORT"] = df["Close"].rolling(ma_compare_short).mean()
+        df["MA_LONG"]  = df["Close"].rolling(ma_compare_long).mean()
 
-    # 추세 비교 사용 여부
-    use_trend = bool(p.get("ma_compare_short") and p.get("ma_compare_long"))
-    if use_trend:
-        mcs = int(p["ma_compare_short"]); mcl = int(p["ma_compare_long"])
-        df["MA_SHORT"] = df["Close"].rolling(mcs).mean()
-        df["MA_LONG"]  = df["Close"].rolling(mcl).mean()
-
-    # B) 기준 인덱스 i 선택: 기본은 마지막 행, 옵션으로 '유효 MA 마지막'
-    i = len(df) - 1
-    if use_last_valid_ma:
-        mask = df["MA_BUY"].notna() & df["MA_SELL"].notna()
-        if use_trend:
-            mask &= df["MA_SHORT"].notna() & df["MA_LONG"].notna()
-        valid_idx = df.index[mask]
-        if len(valid_idx) > 0:
-            i = int(valid_idx[-1])
-
-    # 진단(옵션)
-    latest_date = pd.to_datetime(df["Date"].iloc[-1]).strftime("%Y-%m-%d")
-    basis_date  = pd.to_datetime(df["Date"].iloc[i]).strftime("%Y-%m-%d")
-
-    # 안전 접근 헬퍼
-    def _at(series, idx, off):
-        j = idx - int(off or 0)
-        if j < 0:
-            raise IndexError("offset leads to negative index")
-        val = series.iloc[j]
-        if pd.isna(val):
-            raise ValueError("value is NaN at requested index")
-        return float(val)
-
-    # 파라미터 꺼내기(+기본값)
-    off_cl_b = int(p.get("offset_cl_buy", 0))
-    off_ma_b = int(p.get("offset_ma_buy", 0))
-    off_cl_s = int(p.get("offset_cl_sell", 0))
-    off_ma_s = int(p.get("offset_ma_sell", 0))
-    off_cmp_s = int(p.get("offset_compare_short", 0) or 0)
-    off_cmp_l = int(p.get("offset_compare_long", 0) or 0)
-
+    # ← check_signal_today와 동일: i=0, 음수 인덱싱으로 "끝에서 offset만큼"
+    i = 0
     try:
-        cl_b = _at(df["Close"],   i, off_cl_b)
-        ma_b = _at(df["MA_BUY"],  i, off_ma_b)
-        cl_s = _at(df["Close"],   i, off_cl_s)
-        ma_s = _at(df["MA_SELL"], i, off_ma_s)
+        cl_b = float(df["Close"].iloc[i - offset_cl_buy])
+        ma_b = float(df["MA_BUY"].iloc[i - offset_ma_buy])
+        cl_s = float(df["Close"].iloc[i - offset_cl_sell])
+        ma_s = float(df["MA_SELL"].iloc[i - offset_ma_sell])
     except Exception:
-        out = {"label": "데이터부족", "last_buy": None, "last_sell": None, "last_hold": None}
-        if return_diag:
-            out.update({"basis_date": basis_date, "latest_date": latest_date})
-        return out
+        return {"label": "데이터부족", "last_buy": None, "last_sell": None, "last_hold": None}
 
+    # 추세(있으면) — check_signal_today와 동일: ms >= ml
     trend_ok = True
-    if use_trend:
+    if (ma_compare_short and ma_compare_long and
+        ("MA_SHORT" in df.columns) and ("MA_LONG" in df.columns)):
         try:
-            ms = _at(df["MA_SHORT"], i, off_cmp_s)
-            ml = _at(df["MA_LONG"],  i, off_cmp_l)
+            ms = float(df["MA_SHORT"].iloc[i - offset_compare_short])
+            ml = float(df["MA_LONG"].iloc[i - offset_compare_long])
             trend_ok = (ms >= ml)
         except Exception:
-            # 추세 지표가 NaN이면 추세 미사용과 동일하게 처리
-            trend_ok = True
+            # 데이터 부족이면 추세필터를 '못씀'으로 간주(=기본 True 유지)
+            pass
 
-    # 오늘(=기준 i) 판정
-    buy_op  = p.get("buy_operator",  ">")
-    sell_op = p.get("sell_operator", "<")
-    buy_base  = (cl_b > ma_b) if (buy_op == ">")  else (cl_b < ma_b)
-    sell_base = (cl_s < ma_s) if (sell_op == "<") else (cl_s > ma_s)
-    buy_ok  = (buy_base  and trend_ok)        if p.get("use_trend_in_buy", True)   else buy_base
-    sell_ok = (sell_base and (not trend_ok))  if p.get("use_trend_in_sell", False) else sell_base
+    buy_base  = (cl_b > ma_b) if (buy_operator == ">") else (cl_b < ma_b)
+    sell_base = (cl_s < ma_s) if (sell_operator == "<") else (cl_s > ma_s)
+    buy_ok  = (buy_base  and trend_ok)        if use_trend_in_buy  else buy_base
+    sell_ok = (sell_base and (not trend_ok))  if use_trend_in_sell else sell_base
 
     if buy_ok and sell_ok: label = "BUY & SELL"
     elif buy_ok:           label = "BUY"
     elif sell_ok:          label = "SELL"
     else:                  label = "HOLD"
 
-    # 최근 BUY/SELL/HOLD 탐색 (기존 로직 유지)
+    # 최근 BUY/SELL/HOLD 탐색 (check_signal_today와 동일 인덱싱 규칙)
     last_buy = last_sell = last_hold = None
-    safe_start = max(off_cl_b, off_ma_b, off_cl_s, off_ma_s, off_cmp_s, off_cmp_l)
-
+    safe_start = max(
+        offset_cl_buy, offset_ma_buy,
+        offset_cl_sell, offset_ma_sell,
+        (offset_compare_short or 0), (offset_compare_long or 0)
+    )
     for j in range(len(df)-1, safe_start-1, -1):
         try:
-            cb = _at(df["Close"],   j, off_cl_b)
-            mb = _at(df["MA_BUY"],  j, off_ma_b)
-            cs = _at(df["Close"],   j, off_cl_s)
-            ms = _at(df["MA_SELL"], j, off_ma_s)
+            cb = df["Close"].iloc[j - offset_cl_buy]
+            mb = df["MA_BUY"].iloc[j - offset_ma_buy]
+            cs = df["Close"].iloc[j - offset_cl_sell]
+            ms = df["MA_SELL"].iloc[j - offset_ma_sell]
 
             trend_pass = True
-            if use_trend:
-                ms_short = _at(df["MA_SHORT"], j, off_cmp_s)
-                ms_long  = _at(df["MA_LONG"],  j, off_cmp_l)
+            if (ma_compare_short and ma_compare_long and
+                "MA_SHORT" in df.columns and "MA_LONG" in df.columns):
+                ms_short = df["MA_SHORT"].iloc[j - offset_compare_short]
+                ms_long  = df["MA_LONG"].iloc[j - offset_compare_long]
                 trend_pass = (ms_short >= ms_long)
 
-            _buy_base  = (cb > mb) if (buy_op == ">") else (cb < mb)
-            _sell_base = (cs < ms) if (sell_op == "<") else (cs > ms)
-            _buy_ok    = (_buy_base  and trend_pass)        if p.get("use_trend_in_buy", True)   else _buy_base
-            _sell_ok   = (_sell_base and (not trend_pass))  if p.get("use_trend_in_sell", False) else _sell_base
+            _buy_base  = (cb > mb) if (buy_operator == ">") else (cb < mb)
+            _sell_base = (cs < ms) if (sell_operator == "<") else (cs > ms)
+            _buy_ok    = (_buy_base  and trend_pass)        if use_trend_in_buy  else _buy_base
+            _sell_ok   = (_sell_base and (not trend_pass))  if use_trend_in_sell else _sell_base
 
             if last_buy is None and _buy_ok:
                 last_buy  = pd.to_datetime(df["Date"].iloc[j]).strftime("%Y-%m-%d")
@@ -856,16 +834,12 @@ def summarize_signal_today(
             if last_hold is None and (not _buy_ok and not _sell_ok):
                 last_hold = pd.to_datetime(df["Date"].iloc[j]).strftime("%Y-%m-%d")
 
-            if last_sell and last_hold:
+            if last_buy and last_sell and last_hold:
                 break
         except Exception:
             continue
 
-    out = {"label": label, "last_buy": last_buy, "last_sell": last_sell, "last_hold": last_hold}
-    if return_diag:
-        out.update({"basis_date": basis_date, "latest_date": latest_date})
-    return out
-
+    return {"label": label, "last_buy": last_buy, "last_sell": last_sell, "last_hold": last_hold}
 
 
 ######### 주요 코드 [백테스트] ###########
@@ -1782,25 +1756,18 @@ with tab2:
         for name, p in PRESETS.items():
             sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
             df = get_data(sig_tic, start_date, end_date)
-            if not df.empty:
-                res = summarize_signal_today(
-                    df, p,
-                    force_today_offsets=True,    # ← 오프셋 0으로 고정
-                    use_last_valid_ma=True,      # ← MA가 유효한 마지막 캔들을 기준
-                    return_diag=False
-                )
-            else:
-                res = {"label": "데이터없음", "last_buy": None, "last_sell": None, "last_hold": None}
-                rows.append({
-                    "전략명": name,
-                    "티커": sig_tic,
-                    "시그널": res["label"],
-                    "최근 BUY":  res["last_buy"]  or "-",
-                    "최근 SELL": res["last_sell"] or "-",
-                    "최근 HOLD": res["last_hold"] or "-",
-                    "비고": "-"
-                })
-        
+            res = summarize_signal_today(df, p) if not df.empty else {
+                "label": "데이터없음", "last_buy": None, "last_sell": None, "last_hold": None
+            }
+            rows.append({
+                "전략명": name,
+                "티커": sig_tic,
+                "시그널": res["label"],
+                "최근 BUY": res["last_buy"] or "-",
+                "최근 SELL": res["last_sell"] or "-",
+                "최근 HOLD": res["last_hold"] or "-",
+                "비고": "-"
+            })
         df_view = pd.DataFrame(rows)
         st.dataframe(df_view, use_container_width=True)
         st.download_button(
@@ -2284,13 +2251,4 @@ with tab3:
                         "offset_compare_short","ma_compare_short","offset_compare_long","ma_compare_long",                        
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
-
-
-
-
-
-
-
-
-
 
