@@ -1782,18 +1782,25 @@ with tab2:
         for name, p in PRESETS.items():
             sig_tic = p.get("signal_ticker", p.get("trade_ticker"))
             df = get_data(sig_tic, start_date, end_date)
-            res = summarize_signal_today(df, p) if not df.empty else {
-                "label": "데이터없음", "last_buy": None, "last_sell": None, "last_hold": None
-            }
-            rows.append({
-                "전략명": name,
-                "티커": sig_tic,
-                "시그널": res["label"],
-                "최근 BUY": res["last_buy"] or "-",
-                "최근 SELL": res["last_sell"] or "-",
-                "최근 HOLD": res["last_hold"] or "-",
-                "비고": "-"
-            })
+            if not df.empty:
+                res = summarize_signal_today(
+                    df, p,
+                    force_today_offsets=True,    # ← 오프셋 0으로 고정
+                    use_last_valid_ma=True,      # ← MA가 유효한 마지막 캔들을 기준
+                    return_diag=False
+                )
+            else:
+                res = {"label": "데이터없음", "last_buy": None, "last_sell": None, "last_hold": None}
+                rows.append({
+                    "전략명": name,
+                    "티커": sig_tic,
+                    "시그널": res["label"],
+                    "최근 BUY":  res["last_buy"]  or "-",
+                    "최근 SELL": res["last_sell"] or "-",
+                    "최근 HOLD": res["last_hold"] or "-",
+                    "비고": "-"
+                })
+        
         df_view = pd.DataFrame(rows)
         st.dataframe(df_view, use_container_width=True)
         st.download_button(
