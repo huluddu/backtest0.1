@@ -600,22 +600,22 @@ PRESETS = {
   
     "TSLL 안전 전략": {
         "signal_ticker": "TSLL", "trade_ticker": "TSLL",
-        "offset_cl_buy": 6, "buy_operator": ">", "offset_ma_buy": 16, "ma_buy": 20,
-        "offset_cl_sell": 2, "sell_operator": "<", "offset_ma_sell": 6, "ma_sell": 10,
+        "offset_cl_buy": 20, "buy_operator": "<", "offset_ma_buy": 50, "ma_buy": 20,
+        "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 20, "ma_sell": 10,
         "use_trend_in_buy": True, "use_trend_in_sell": True,
-        "offset_compare_short": 26, "ma_compare_short": 15,
-        "offset_compare_long": 2, "ma_compare_long": 15,         
-        "stop_loss_pct": 0.0, "take_profit_pct": 0.0
+        "offset_compare_short": 1, "ma_compare_short": 10,
+        "offset_compare_long": 50, "ma_compare_long": 50,         
+        "stop_loss_pct": 25.0, "take_profit_pct": 15.0
     },
     
     "TSLL 도전 전략": {
         "signal_ticker": "TSLL", "trade_ticker": "TSLL",
-        "offset_cl_buy": 10, "buy_operator": "<", "offset_ma_buy": 10, "ma_buy": 20,
-        "offset_cl_sell": 50, "sell_operator": "<", "offset_ma_sell": 50, "ma_sell": 20,
+        "offset_cl_buy": 50, "buy_operator": ">", "offset_ma_buy": 50, "ma_buy": 10,
+        "offset_cl_sell": 10, "sell_operator": "<", "offset_ma_sell": 10, "ma_sell": 20,
         "use_trend_in_buy": True, "use_trend_in_sell": True,
-        "offset_compare_short": 1, "ma_compare_short": 5,
-        "offset_compare_long": 25, "ma_compare_long": 5,         
-        "stop_loss_pct": 15.0, "take_profit_pct": 15.0
+        "offset_compare_short": 50, "ma_compare_short": 50,
+        "offset_compare_long": 50, "ma_compare_long": 5,         
+        "stop_loss_pct": 0.0, "take_profit_pct": 0.0
     },
 
     "GGLL 전략": {
@@ -2262,6 +2262,7 @@ with tab3:
                         "offset_compare_short","ma_compare_short","offset_compare_long","ma_compare_long",                        
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
