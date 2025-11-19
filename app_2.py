@@ -635,7 +635,7 @@ PRESETS = {
         "use_trend_in_buy": True, "use_trend_in_sell": True,
         "offset_compare_short": 26, "ma_compare_short": 15,
         "offset_compare_long": 6, "ma_compare_long": 15,         
-        "stop_loss_pct": 0.0, "take_profit_pct": 0.0
+        "stop_loss_pct": 30.0, "take_profit_pct": 0.0
     },
 
 
@@ -1430,6 +1430,14 @@ def auto_search_train_test(
 
         # === 결과 행 ===
         row = {
+            # Full (Train+Test 전체)
+            f"Full_{objective_metric}": r_fu.get(objective_metric, None),
+            "Full_수익률 (%)": r_fu.get("수익률 (%)", None),
+            "Full_승률(%)": r_fu.get("승률 (%)", None),
+            "Full_MDD(%)": r_fu.get("MDD (%)", None),
+            "Full_ProfitFactor": r_fu.get("Profit Factor", None),
+            "Full_총매매": r_fu.get("총 매매 횟수", None),
+            
             # Train
             f"Train_{objective_metric}": r_tr.get(objective_metric, None),
             "Train_수익률(%)": r_tr.get("수익률 (%)", None),
@@ -1445,14 +1453,6 @@ def auto_search_train_test(
             "Test_MDD(%)": r_te.get("MDD (%)", None),
             "Test_ProfitFactor": r_te.get("Profit Factor", None),
             "Test_총매매": r_te.get("총 매매 횟수", None),
-
-            # Full (Train+Test 전체)
-            f"Full_{objective_metric}": r_fu.get(objective_metric, None),
-            "Full_수익률 (%)": r_fu.get("수익률 (%)", None),
-            "Full_승률(%)": r_fu.get("승률 (%)", None),
-            "Full_MDD(%)": r_fu.get("MDD (%)", None),
-            "Full_ProfitFactor": r_fu.get("Profit Factor", None),
-            "Full_총매매": r_fu.get("총 매매 횟수", None),
         }
 
         # 파라미터 기록
@@ -2104,7 +2104,7 @@ with tab3:
 
         # 다운로드 버튼 (로그)
         with st.expander("🧾 매매 로그"):
-            st.dataframe((df_log[[c for c in ["FULL_수익률","FULL_MDD","FULL_ProfitFactor","Full_수익률 (%)","Full_MDD (%)","Full_ProfitFactor"] if c in df_log.columns]] if any(c in df_log.columns for c in ["Full_수익률 (%)","Full_MDD (%)","Full_ProfitFactor","FULL_수익률","FULL_MDD","FULL_ProfitFactor"]) else df_log))
+            st.dataframe((df_log[[c for c in ["FULL_수익률","FULL_MDD","FULL_ProfitFactor,Full_수익률 (%)","Full_MDD (%)","Full_ProfitFactor"] if c in df_log.columns]] if any(c in df_log.columns for c in ["Full_수익률 (%)","Full_MDD (%)","Full_ProfitFactor","FULL_수익률","FULL_MDD","FULL_ProfitFactor"]) else df_log))
         csv = df_log.reset_index().to_csv(index=False).encode("utf-8-sig")
         st.download_button("⬇️ 백테스트 결과 다운로드 (CSV)", data=csv, file_name="backtest_result.csv", mime="text/csv")
 
@@ -2262,5 +2262,6 @@ with tab3:
                         "offset_compare_short","ma_compare_short","offset_compare_long","ma_compare_long",                        
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
