@@ -628,6 +628,16 @@ PRESETS = {
         "stop_loss_pct": 15.0, "take_profit_pct": 0.0
     },
 
+    "GGLL 안전 전략": {
+        "signal_ticker": "GGLL", "trade_ticker": "GGLL",
+        "offset_cl_buy": 10, "buy_operator": ">", "offset_ma_buy": 50, "ma_buy": 5,
+        "offset_cl_sell": 10, "sell_operator": "<", "offset_ma_sell": 20, "ma_sell": 20,
+        "use_trend_in_buy": True, "use_trend_in_sell": True,
+        "offset_compare_short": 10, "ma_compare_short": 20,
+        "offset_compare_long": 50, "ma_compare_long": 10,         
+        "stop_loss_pct": 20.0, "take_profit_pct": 20.0
+    },
+    
     "BITX 전략": {
         "signal_ticker": "BITX", "trade_ticker": "BITX",
         "offset_cl_buy": 16, "buy_operator": ">", "offset_ma_buy": 26, "ma_buy": 5,
@@ -2262,6 +2272,7 @@ with tab3:
                         "offset_compare_short","ma_compare_short","offset_compare_long","ma_compare_long",                        
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
