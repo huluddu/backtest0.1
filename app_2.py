@@ -640,7 +640,7 @@ PRESETS = {
     
     "GGLL 안전 전략2": {
         "signal_ticker": "GGLL", "trade_ticker": "GGLL",
-        "offset_cl_buy": 50, "buy_operator": "<", "offset_ma_buy": 20, "ma_buy": 50,
+        "offset_cl_buy": 50, "buy_operator": "<", "offset_ma_buy": 20, "ma_buy": 1,
         "offset_cl_sell": 20, "sell_operator": "<", "offset_ma_sell": 1, "ma_sell": 1,
         "use_trend_in_buy": True, "use_trend_in_sell": True,
         "offset_compare_short": 1, "ma_compare_short": 10,
@@ -2282,6 +2282,7 @@ with tab3:
                         "offset_compare_short","ma_compare_short","offset_compare_long","ma_compare_long",                        
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
