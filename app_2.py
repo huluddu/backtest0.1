@@ -595,7 +595,7 @@ PRESETS = {
         "use_trend_in_buy": True, "use_trend_in_sell": True,
         "offset_compare_short": 20, "ma_compare_short": 10,
         "offset_compare_long": 20, "ma_compare_long": 1,
-        "stop_loss_pct": 25.0, "take_profit_pct": 15.0
+        "stop_loss_pct": 35.0, "take_profit_pct": 15.0
     },
   
     "TSLL 안전 전략": {
@@ -2282,6 +2282,7 @@ with tab3:
                         "offset_compare_short","ma_compare_short","offset_compare_long","ma_compare_long",                        
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
