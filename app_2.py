@@ -658,7 +658,7 @@ PRESETS = {
         "stop_loss_pct": 30.0, "take_profit_pct": 0.0
     },
 
-    "TQQQ 전략": {
+    "TQQQ 도전 전략": {
         "signal_ticker": "TQQQ", "trade_ticker": "TQQQ",
         "offset_cl_buy": 50, "buy_operator": ">", "offset_ma_buy": 10, "ma_buy": 1,
         "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 1, 
@@ -668,7 +668,7 @@ PRESETS = {
         "stop_loss_pct": 15.0, "take_profit_pct": 25.0
     },
 
-    "TQQQ 전략2": {
+    "TQQQ 안전 전략": {
         "signal_ticker": "TQQQ", "trade_ticker": "TQQQ",
         "offset_cl_buy": 10, "buy_operator": "<", "offset_ma_buy": 50, "ma_buy": 20,
         "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 10, "ma_sell": 20, 
@@ -678,17 +678,7 @@ PRESETS = {
         "stop_loss_pct": 25.0, "take_profit_pct": 25.0
     },
 
-    "TQQQ 전략3": {
-        "signal_ticker": "TQQQ", "trade_ticker": "TQQQ",
-        "offset_cl_buy": 10, "buy_operator": ">", "offset_ma_buy": 20, "ma_buy": 5,
-        "offset_cl_sell": 50, "sell_operator": "<", "offset_ma_sell": 10, "ma_sell": 1, 
-        "use_trend_in_buy": False, "use_trend_in_sell": True,
-        "offset_compare_short": 10, "ma_compare_short": 1,
-        "offset_compare_long": 10, "ma_compare_long": 50,
-        "stop_loss_pct": 25.0, "take_profit_pct": 25.0
-    },
-
-    "BITX-TQQQ": {
+    "BITX-TQQQ 안전": {
         "signal_ticker": "BITX", "trade_ticker": "TQQQ",
         "offset_cl_buy": 10, "buy_operator": ">", "offset_ma_buy": 10, "ma_buy": 20,
         "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 5,
@@ -698,38 +688,37 @@ PRESETS = {
         "stop_loss_pct": 0.0, "take_profit_pct": 15.0
     },
 
-    "BITX-TQQQ2": {
+    "BITX-TQQQ 도전": {
         "signal_ticker": "BITX", "trade_ticker": "TQQQ",
-        "offset_cl_buy": 20, "buy_operator": ">", "offset_ma_buy": 1, "ma_buy": 1,
-        "offset_cl_sell": 1, "sell_operator": "<", "offset_ma_sell": 20, "ma_sell": 5,
+        "offset_cl_buy": 50, "buy_operator": "<", "offset_ma_buy": 20, "ma_buy": 50,
+        "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 10, "ma_sell": 5,
         "use_trend_in_buy": True, "use_trend_in_sell": True,
         "offset_compare_short": 10, "ma_compare_short": 1,
-        "offset_compare_long": 20, "ma_compare_long": 10,
-        "stop_loss_pct": 25.0, "take_profit_pct": 0.0
+        "offset_compare_long": 20, "ma_compare_long": 1,
+        "stop_loss_pct": 25.0, "take_profit_pct": 25.0
     },
 
-    
-    "SLV 전략": {
-        "signal_ticker": "SLV", "trade_ticker": "SLV",
-        "offset_cl_buy": 20, "buy_operator": ">", "offset_ma_buy": 1, "ma_buy": 50,
-        "offset_cl_sell": 20, "sell_operator": "<", "offset_ma_sell": 10, "ma_sell": 1, 
+    "BTC-TQQQ": {
+        "signal_ticker": "BTC-USD", "trade_ticker": "TQQQ",
+        "offset_cl_buy": 10, "buy_operator": ">", "offset_ma_buy": 1, "ma_buy": 20,
+        "offset_cl_sell": 50, "sell_operator": "<", "offset_ma_sell": 1, "ma_sell": 10,
         "use_trend_in_buy": True, "use_trend_in_sell": True,
-        "offset_compare_short": 20, "ma_compare_short": 50,
-        "offset_compare_long": 1, "ma_compare_long": 50,         
-        "stop_loss_pct": 0.0, "take_profit_pct": 25.0
-    }, 
-
-    "SLV 전략2": {
-        "signal_ticker": "SLV", "trade_ticker": "SLV",
-        "offset_cl_buy": 50, "buy_operator": ">", "offset_ma_buy": 20, "ma_buy": 5,
-        "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 20, 
-        "use_trend_in_buy": True, "use_trend_in_sell": True,
-        "offset_compare_short": 50, "ma_compare_short": 10,
-        "offset_compare_long": 20, "ma_compare_long": 20,         
-        "stop_loss_pct": 25.0, "take_profit_pct": 25.0
-    },     
+        "offset_compare_short": 1, "ma_compare_short": 5,
+        "offset_compare_long": 10, "ma_compare_long": 5,
+        "stop_loss_pct": 15.0, "take_profit_pct": 15.0
+    },
     
-
+    "BTC-TQQQ2": {
+        "signal_ticker": "BTC-USD", "trade_ticker": "TQQQ",
+        "offset_cl_buy": 50, "buy_operator": ">", "offset_ma_buy": 20, "ma_buy": 1,
+        "offset_cl_sell": 50, "sell_operator": "<", "offset_ma_sell": 20, "ma_sell": 1,
+        "use_trend_in_buy": True, "use_trend_in_sell": True,
+        "offset_compare_short": 1, "ma_compare_short": 10,
+        "offset_compare_long": 20, "ma_compare_long": 10,
+        "stop_loss_pct": 35.0, "take_profit_pct": 25.0
+    },
+    
+    
     "453850 ACE 미국30년국채 전략": {
         "signal_ticker": "453850", "trade_ticker": "453850",
         "offset_cl_buy": 16, "buy_operator": "<", "offset_ma_buy": 26, "ma_buy": 15,
@@ -2322,6 +2311,7 @@ with tab3:
                         "offset_compare_short","ma_compare_short","offset_compare_long","ma_compare_long",                        
                         "stop_loss_pct","take_profit_pct","min_hold_days"
                     ]})
+
 
 
 
