@@ -8,7 +8,7 @@ import random
 from pykrx import stock
 import numpy as np
 import re
-import google.generativeai as genai
+#import google.generativeai as genai
 import json
 import os
 
@@ -183,22 +183,6 @@ def prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool):
 # ==========================================
 # 3. 로직 함수
 # ==========================================
-def ask_gemini_analysis(summary, params, ticker, api_key, model_name):
-    if not api_key: return "⚠️ API Key가 없습니다."
-    try:
-        genai.configure(api_key=api_key)
-        m_name = model_name if model_name and model_name.strip() else "gemini-pro"
-        model = genai.GenerativeModel(m_name)
-        prompt = f"""
-        전문 퀀트 투자자 관점에서 분석해주세요.
-        [전략: {ticker}] {params}
-        [결과] 수익률: {summary.get('수익률 (%)')}%, MDD: {summary.get('MDD (%)')}%, 승률: {summary.get('승률 (%)')}%
-        1. 리스크 분석
-        2. 실전 투자 적합성
-        3. 파라미터 개선 제안
-        """
-        with st.spinner("🤖 분석 중..."): return model.generate_content(prompt).text
-    except Exception as e: return f"❌ 오류: {e}"
 
 def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offset_cl_buy, offset_cl_sell, ma_compare_short, ma_compare_long, offset_compare_short, offset_compare_long, buy_operator, sell_operator, use_trend_in_buy, use_trend_in_sell):
     if df.empty: st.warning("데이터 없음"); return
@@ -509,22 +493,6 @@ PRESETS = {
 }
 PRESETS.update(load_saved_strategies())
 
-with st.sidebar:
-    st.header("⚙️ 설정 & Gemini")
-    api_key_input = st.text_input("Gemini API Key", type="password", key="gemini_key_input")
-    if api_key_input: 
-        st.session_state["gemini_api_key"] = api_key_input
-        try:
-            genai.configure(api_key=api_key_input)
-            models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            idx = 0
-            for i, m in enumerate(models):
-                if "gemini-1.5-flash" in m: idx = i; break
-            selected_model = st.selectbox("🤖 모델 선택", models, index=idx)
-            st.session_state["selected_model_name"] = selected_model
-        except: st.error("모델 로드 실패")
-    
-    st.divider()
     # 💾 전략 저장/삭제 UI
     with st.expander("💾 전략 저장/삭제"):
         save_name = st.text_input("전략 이름")
@@ -788,3 +756,4 @@ with tab4:
             c1, c2 = st.columns([4, 1])
             with c1: st.dataframe(pd.DataFrame([row]), hide_index=True)
             with c2: st.button(f"🥇 적용하기 #{i}", key=f"apply_{i}", on_click=apply_opt_params, args=(row,))
+
