@@ -491,6 +491,25 @@ PRESETS = {
     "371460 TIGER차이나전기차SOLACTIVE": {"signal_ticker": "371460", "trade_ticker": "371460", "offset_cl_buy": 2, "buy_operator": ">", "offset_ma_buy": 6, "ma_buy": 10, "offset_cl_sell": 16, "sell_operator": ">", "offset_ma_sell": 2, "ma_sell": 5, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 6, "ma_compare_short": 15, "offset_compare_long": 16, "ma_compare_long": 10, "stop_loss_pct": 0.0, "take_profit_pct": 10.0},
     "483280 AITOP10커브드콜": {"signal_ticker": "483280", "trade_ticker": "483280", "offset_cl_buy": 26, "buy_operator": ">", "offset_ma_buy": 26, "ma_buy": 20, "offset_cl_sell": 26, "sell_operator": ">", "offset_ma_sell": 6, "ma_sell": 20, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 2, "ma_compare_short": 20, "offset_compare_long": 16, "ma_compare_long": 5, "stop_loss_pct": 0.0, "take_profit_pct": 0.0},
 }
+PRESETS.update(load_saved_strategies())
+
+with st.divider()
+    # 💾 전략 저장/삭제 UI
+    with st.expander("💾 전략 저장/삭제"):
+        save_name = st.text_input("전략 이름")
+        if st.button("현재 설정 저장"):
+            if save_name:
+                params = {k: st.session_state[k] for k in ["signal_ticker_input","trade_ticker_input","ma_buy","offset_ma_buy","offset_cl_buy","buy_operator","ma_sell","offset_ma_sell","offset_cl_sell","sell_operator","use_trend_in_buy","use_trend_in_sell","ma_compare_short","ma_compare_long","offset_compare_short","offset_compare_long","stop_loss_pct","take_profit_pct","min_hold_days"]}
+                save_strategy_to_file(save_name, params)
+                st.rerun()
+        
+        del_name = st.selectbox("삭제할 전략", list(load_saved_strategies().keys())) if load_saved_strategies() else None
+        if del_name and st.button("삭제"):
+            delete_strategy_from_file(del_name)
+            st.rerun()
+
+    st.divider()
+    selected_preset = st.selectbox("🎯 프리셋", ["직접 설정"] + list(PRESETS.keys()), key="preset_name", on_change=_on_preset_change, args=(PRESETS,))
 
 preset_values = PRESETS.get(selected_preset, {}) if selected_preset != "직접 설정" else {}
 col1, col2 = st.columns(2)
@@ -738,5 +757,3 @@ with tab4:
             c1, c2 = st.columns([4, 1])
             with c1: st.dataframe(pd.DataFrame([row]), hide_index=True)
             with c2: st.button(f"🥇 적용하기 #{i}", key=f"apply_{i}", on_click=apply_opt_params, args=(row,))
-
-
