@@ -493,7 +493,7 @@ PRESETS = {
 }
 PRESETS.update(load_saved_strategies())
 
-with st.divider()
+with st.divider():
     # 💾 전략 저장/삭제 UI
     with st.expander("💾 전략 저장/삭제"):
         save_name = st.text_input("전략 이름")
