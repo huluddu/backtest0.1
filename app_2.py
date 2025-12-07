@@ -93,7 +93,7 @@ def _parse_choices(text, cast="int"):
     if text is None: return []
     tokens = [t for t in re.split(r"[,\s]+", str(text).strip()) if t != ""]
     if not tokens: return []
-    def _to_bool(s): return s.strip().lower() in ("1", "true", "t", "y", "yes", "on")
+    def _to_bool(s): return s.strip().lower() in ("1", "true", "t", "y", "yes")
     out = []
     for t in tokens:
         if cast == "int": out.append("same" if str(t).lower()=="same" else int(t))
@@ -346,7 +346,7 @@ def backtest_fast(base, x_sig, x_trd, ma_dict_sig, ma_buy, offset_ma_buy, ma_sel
             trend_ok = (ms >= ml)
 
         buy_base = (cl_b > ma_b) if buy_operator == ">" else (cl_b < ma_b)
-        sell_base = (cl_s < ma_s) if sell_operator == "<" else (cl_s > ma_s)
+        sell_base = (cl_s < ma_s) if (sell_operator == "<") else (cl_s > ma_s)
         buy_cond = (buy_base and trend_ok) if use_trend_in_buy else buy_base
         sell_cond = (sell_base and (not trend_ok)) if use_trend_in_sell else sell_base
 
@@ -405,7 +405,7 @@ def backtest_fast(base, x_sig, x_trd, ma_dict_sig, ma_buy, offset_ma_buy, ma_sel
         asset_curve.append(total)
         logs.append({
             "날짜": base["Date"].iloc[i], "종가": close_today, "신호": signal, "체결가": exec_price,
-            "자산": total, "이유": reason, "손절발동": stop_hit, "익절발동": take_hit,
+            "자산": total, "이유": reason, "손절발동": stop_hit, "익절발동": take_hit, 
             "RSI": rsi_arr[i] if use_rsi_filter and i < len(rsi_arr) else None
         })
 
@@ -459,6 +459,9 @@ def auto_search_train_test(signal_ticker, trade_ticker, start_date, end_date, sp
     min_tr = constraints.get("min_trades", 0)
     min_wr = constraints.get("min_winrate", 0)
     limit_mdd = constraints.get("limit_mdd", 0)
+    # ✅ 신규 필터 추가
+    min_train_r = constraints.get("min_train_ret", -999.0)
+    min_test_r = constraints.get("min_test_ret", -999.0)
 
     for _ in range(int(n_trials)):
         p = {}
@@ -489,7 +492,10 @@ def auto_search_train_test(signal_ticker, trade_ticker, start_date, end_date, sp
         if limit_mdd > 0 and res_full.get('MDD (%)', 0) < -abs(limit_mdd): continue
 
         res_tr = backtest_fast(base_tr, x_sig_tr, x_trd_tr, **common_args)
+        if res_tr.get('수익률 (%)', -999) < min_train_r: continue # Train 수익률 필터
+
         res_te = backtest_fast(base_te, x_sig_te, x_trd_te, **common_args)
+        if res_te.get('수익률 (%)', -999) < min_test_r: continue # Test 수익률 필터
 
         row = {
             "Full_수익률(%)": res_full.get('수익률 (%)'), "Full_MDD(%)": res_full.get('MDD (%)'), "Full_승률(%)": res_full.get('승률 (%)'), "Full_총매매": res_full.get('총 매매 횟수'),
@@ -617,6 +623,7 @@ with st.expander("📈 상세 설정 (Offset, 비용 등)", expanded=True):
         if seed > 0: random.seed(seed)
 
     st.divider()
+    # ✅ RSI 설정
     st.markdown("#### 🔮 보조지표 설정")
     c_r1, c_r2 = st.columns(2)
     rsi_p = c_r1.number_input("RSI 기간 (Period)", 14, key="rsi_period")
@@ -722,39 +729,48 @@ with tab3:
             if "ai_analysis" in st.session_state: st.markdown(st.session_state["ai_analysis"])
             with st.expander("로그"): st.dataframe(df_log)
 
+# ✅ [Tab 4: 실험실 업데이트 (필터 및 기본값 수정)]
 with tab4:
     st.markdown("### 🧬 전략 파라미터 자동 최적화")
+    
     with st.expander("🔎 필터 및 정렬 설정", expanded=True):
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2 = st.columns(2)
         sort_metric = c1.selectbox("정렬 기준", ["Full_수익률(%)", "Test_수익률(%)", "Full_MDD(%)", "Full_승률(%)"])
-        min_trades = c2.number_input("최소 매매 횟수", 0, 100, 5)
-        min_win = c3.number_input("최소 승률 (%)", 0.0, 100.0, 50.0)
-        limit_mdd = c4.number_input("최대 낙폭(MDD) 제한 (%) (0=미사용)", 0.0, 100.0, 0.0)
-        top_n = st.slider("표시할 상위 개수", 1, 50, 10)
+        top_n = c2.slider("표시할 상위 개수", 1, 50, 10)
+        
+        c3, c4 = st.columns(2)
+        min_trades = c3.number_input("최소 매매 횟수", 0, 100, 5)
+        min_win = c4.number_input("최소 승률 (%)", 0.0, 100.0, 50.0)
+        
+        c5, c6 = st.columns(2)
+        min_train_ret = c5.number_input("최소 Train 수익률 (%)", -100.0, 1000.0, 0.0)
+        min_test_ret = c6.number_input("최소 Test 수익률 (%)", -100.0, 1000.0, 0.0)
+        
+        limit_mdd = st.number_input("최대 낙폭(MDD) 제한 (%) (0=미사용)", 0.0, 100.0, 0.0)
 
     colL, colR = st.columns(2)
     with colL:
         st.markdown("#### 1. 매수/매도 조건")
-        cand_off_cl_buy = st.text_input("매수 종가 Offset", "1, 20, 50, 60, 120")
+        cand_off_cl_buy = st.text_input("매수 종가 Offset", "1, 5, 10, 20, 50")
         cand_buy_op = st.text_input("매수 부호", "<,>")
-        cand_off_ma_buy = st.text_input("매수 이평 Offset", "1, 20, 50, 60, 120")
-        cand_ma_buy = st.text_input("매수 이평 (MA Buy)", "1, 20, 50, 60, 120")
+        cand_off_ma_buy = st.text_input("매수 이평 Offset", "1, 5, 10, 20, 50")
+        cand_ma_buy = st.text_input("매수 이평 (MA Buy)", "1, 5, 10, 20, 50, 60, 120")
         
         st.divider()
-        cand_off_cl_sell = st.text_input("매도 종가 Offset", "1, 20, 50, 60, 120")
+        cand_off_cl_sell = st.text_input("매도 종가 Offset", "1, 5, 10, 20, 50")
         cand_sell_op = st.text_input("매도 부호", "<,>")
-        cand_off_ma_sell = st.text_input("매도 이평 Offset", "1, 20, 50, 60, 120")
-        cand_ma_sell = st.text_input("매도 이평 (MA Sell)", "1, 20, 50, 60, 120")
+        cand_off_ma_sell = st.text_input("매도 이평 Offset", "1, 5, 10, 20, 50")
+        cand_ma_sell = st.text_input("매도 이평 (MA Sell)", "1, 5, 10, 20, 50, 60, 120")
 
     with colR:
         st.markdown("#### 2. 추세 & 리스크")
         cand_use_tr_buy = st.text_input("매수 추세필터 (True, False)", "True, False")
         cand_use_tr_sell = st.text_input("매도 역추세필터", "True")
         
-        cand_ma_s = st.text_input("추세 Short 후보", "1, 20, 50, 60, 120")
-        cand_ma_l = st.text_input("추세 Long 후보", "1, 20, 50, 60, 120")
-        cand_off_s = st.text_input("추세 Short Offset", "1, 20, 50, 60, 120")
-        cand_off_l = st.text_input("추세 Long Offset", "1, 20, 50, 60, 120")
+        cand_ma_s = st.text_input("추세 Short 후보", "1, 5, 10, 20, 50, 60, 120")
+        cand_ma_l = st.text_input("추세 Long 후보", "1, 5, 10, 20, 50, 60, 120")
+        cand_off_s = st.text_input("추세 Short Offset", "1, 5, 10, 20, 50")
+        cand_off_l = st.text_input("추세 Long Offset", "1, 5, 10, 20, 50")
         
         st.divider()
         cand_stop = st.text_input("손절(%) 후보", "0, 5, 10, 20")
@@ -775,7 +791,13 @@ with tab4:
             "stop_loss_pct": _parse_choices(cand_stop, "float"), "take_profit_pct": _parse_choices(cand_take, "float"),
         }
         
-        constraints = {"min_trades": min_trades, "min_winrate": min_win, "limit_mdd": limit_mdd}
+        constraints = {
+            "min_trades": min_trades,
+            "min_winrate": min_win,
+            "limit_mdd": limit_mdd,
+            "min_train_ret": min_train_ret, # ✅ 신규 필터 적용
+            "min_test_ret": min_test_ret    # ✅ 신규 필터 적용
+        }
         
         with st.spinner("최적화 진행 중..."):
             df_opt = auto_search_train_test(
@@ -793,12 +815,30 @@ with tab4:
                 st.session_state['opt_results'] = df_opt 
                 st.session_state['sort_metric'] = sort_metric
             else:
-                st.warning("조건을 만족하는 결과가 없습니다.")
+                st.warning("조건을 만족하는 결과가 없습니다. (필터를 완화하거나 시도 횟수를 늘려보세요)")
 
     if 'opt_results' in st.session_state:
         df_show = st.session_state['opt_results'].sort_values(st.session_state['sort_metric'], ascending=False).head(top_n)
+        
         st.markdown("#### 🏆 상위 결과 (적용 버튼을 누르면 즉시 백테스트 실행)")
+        
+        # 반복문으로 각 행마다 '적용' 버튼 생성
         for i, row in df_show.iterrows():
             c1, c2 = st.columns([4, 1])
-            with c1: st.dataframe(pd.DataFrame([row]), hide_index=True)
-            with c2: st.button(f"🥇 적용하기 #{i}", key=f"apply_{i}", on_click=apply_opt_params, args=(row,))
+            with c1:
+                # 주요 지표만 요약해서 보여줌
+                st.dataframe(
+                    pd.DataFrame([row]), 
+                    hide_index=True,
+                    column_config={
+                        "Full_수익률(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Test_수익률(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Train_수익률(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Full_MDD(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Test_MDD(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Full_승률(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                    }
+                )
+            with c2:
+                # on_click 콜백 사용
+                st.button(f"🥇 적용하기 #{i}", key=f"apply_{i}", on_click=apply_opt_params, args=(row,))
