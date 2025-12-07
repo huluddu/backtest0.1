@@ -182,19 +182,22 @@ def prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool):
     return base, x_sig, x_trd, ma_dict_sig
 
 # ==========================================
-# 3. 로직 함수 (보조지표 포함)
+# 3. 로직 함수 (보조지표 복구됨)
 # ==========================================
 def calculate_indicators(close_data, rsi_period, bb_period, bb_std):
+    """RSI 및 볼린저밴드 계산"""
     df = pd.DataFrame({'close': close_data})
     delta = df['close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
     rs = gain / loss
     rsi = 100 - (100 / (1 + rs))
+    
     mid = df['close'].rolling(window=bb_period).mean()
     std = df['close'].rolling(window=bb_period).std()
     upper = mid + (bb_std * std)
     lower = mid - (bb_std * std)
+    
     return rsi.to_numpy(), upper.to_numpy(), lower.to_numpy()
 
 def ask_gemini_analysis(summary, params, ticker, api_key, model_name):
@@ -303,23 +306,25 @@ def summarize_signal_today(df, p):
     except: pass
     return {"label": label, "last_buy": last_buy, "last_sell": last_sell, "last_hold": last_hold}
 
+# ✅ [Backtest: RSI 파라미터 복구 & 익절 버그 수정 포함]
 def backtest_fast(base, x_sig, x_trd, ma_dict_sig, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offset_cl_buy, offset_cl_sell, ma_compare_short, ma_compare_long, offset_compare_short, offset_compare_long, initial_cash, stop_loss_pct, take_profit_pct, strategy_behavior, min_hold_days, fee_bps, slip_bps, use_trend_in_buy, use_trend_in_sell, buy_operator, sell_operator, 
                   use_rsi_filter=False, rsi_period=14, rsi_min=30, rsi_max=70,
                   use_bb_filter=False, bb_period=20, bb_std=2.0):
-    
     n = len(base)
     if n == 0: return {}
     ma_buy_arr, ma_sell_arr = ma_dict_sig.get(ma_buy), ma_dict_sig.get(ma_sell)
     ma_s_arr = ma_dict_sig.get(ma_compare_short) if ma_compare_short else None
     ma_l_arr = ma_dict_sig.get(ma_compare_long) if ma_compare_long else None
 
-    rsi_arr, bb_up, bb_lo = None, None, None
-    if use_rsi_filter or use_bb_filter:
-        rsi_arr, bb_up, bb_lo = calculate_indicators(x_sig, rsi_period, bb_period, bb_std)
+    # RSI 계산 (그래프용 & 필터용)
+    rsi_arr = None
+    if use_rsi_filter or True: # 그래프를 위해 항상 계산
+        rsi_arr, _, _ = calculate_indicators(x_sig, rsi_period, bb_period, bb_std)
     
-    idx0 = max((ma_buy or 1), (ma_sell or 1), offset_ma_buy, offset_ma_sell, offset_cl_buy, offset_cl_sell, (offset_compare_short or 0), (offset_compare_long or 0), (rsi_period if use_rsi_filter else 0), (bb_period if use_bb_filter else 0)) + 1
+    idx0 = max((ma_buy or 1), (ma_sell or 1), offset_ma_buy, offset_ma_sell, offset_cl_buy, offset_cl_sell, (offset_compare_short or 0), (offset_compare_long or 0), rsi_period) + 1
     xO, xH, xL, xC_trd = base["Open_trd"].values, base["High_trd"].values, base["Low_trd"].values, x_trd
     cash, position, hold_days = float(initial_cash), 0.0, 0
+    entry_price = 0.0 
     logs, asset_curve = [], []
     sb = str(strategy_behavior)[:1]
 
@@ -344,27 +349,33 @@ def backtest_fast(base, x_sig, x_trd, ma_dict_sig, ma_buy, offset_ma_buy, ma_sel
             trend_ok = (ms >= ml)
 
         buy_base = (cl_b > ma_b) if buy_operator == ">" else (cl_b < ma_b)
-        sell_base = (cl_s < ma_s) if sell_operator == "<" else (cl_s > ma_s)
+        sell_base = (cl_s < ma_s) if (sell_operator == "<") else (cl_s > ma_s)
         buy_cond = (buy_base and trend_ok) if use_trend_in_buy else buy_base
         sell_cond = (sell_base and (not trend_ok)) if use_trend_in_sell else sell_base
 
-        if use_rsi_filter and buy_cond:
+        # RSI Filter
+        if use_rsi_filter and buy_cond and rsi_arr is not None:
             if rsi_arr[i-1] > rsi_max: buy_cond = False
 
         stop_hit, take_hit = False, False
-        if position > 0:
-            buy_px = logs[-1]['체결가'] if logs and logs[-1]['신호']=='BUY' else close_today
+        if position > 0 and entry_price > 0:
             if stop_loss_pct > 0:
-                sl_px = buy_px * (1 - stop_loss_pct/100)
-                if low_today <= sl_px: stop_hit = True; exec_price = sl_px
+                sl_price = entry_price * (1 - stop_loss_pct / 100)
+                if low_today <= sl_price:
+                    stop_hit = True
+                    exec_price = open_today if open_today < sl_price else sl_price
+            
             if take_profit_pct > 0 and not stop_hit:
-                tp_px = buy_px * (1 + take_profit_pct/100)
-                if high_today >= tp_px: take_hit = True; exec_price = tp_px
+                tp_price = entry_price * (1 + take_profit_pct / 100)
+                if high_today >= tp_price:
+                    take_hit = True
+                    exec_price = open_today if open_today > tp_price else tp_price
             
             if stop_hit or take_hit:
                 fill = _fill_sell(exec_price)
                 cash = position * fill
                 position = 0.0
+                entry_price = 0.0
                 signal = "SELL"; reason = "손절" if stop_hit else "익절"
 
         if position > 0 and signal == "HOLD":
@@ -373,6 +384,7 @@ def backtest_fast(base, x_sig, x_trd, ma_dict_sig, ma_buy, offset_ma_buy, ma_sel
                 fill = _fill_sell(base_px)
                 cash = position * fill
                 position = 0.0
+                entry_price = 0.0
                 signal = "SELL"; reason = "전략매도"; exec_price = base_px
 
         if position == 0 and signal == "HOLD":
@@ -385,6 +397,7 @@ def backtest_fast(base, x_sig, x_trd, ma_dict_sig, ma_buy, offset_ma_buy, ma_sel
                 base_px = open_today
                 fill = _fill_buy(base_px)
                 position = cash / fill
+                entry_price = base_px
                 cash = 0.0
                 signal = "BUY"; reason = "전략매수"; exec_price = base_px
                 just_bought = True
@@ -396,8 +409,8 @@ def backtest_fast(base, x_sig, x_trd, ma_dict_sig, ma_buy, offset_ma_buy, ma_sel
         asset_curve.append(total)
         logs.append({
             "날짜": base["Date"].iloc[i], "종가": close_today, "신호": signal, "체결가": exec_price,
-            "자산": total, "이유": reason, "손절발동": stop_hit, "익절발동": take_hit, 
-            "RSI": rsi_arr[i] if use_rsi_filter and i < len(rsi_arr) else None
+            "자산": total, "이유": reason, "손절발동": stop_hit, "익절발동": take_hit,
+            "RSI": rsi_arr[i] if rsi_arr is not None else None
         })
 
     if not logs: return {}
@@ -470,11 +483,9 @@ def auto_search_train_test(signal_ticker, trade_ticker, start_date, end_date, sp
             "buy_operator": p.get('buy_operator', '>'), "sell_operator": p.get('sell_operator', '<')
         }
 
-        # Full Test
         res_full = backtest_fast(base_full, x_sig_full, x_trd_full, **common_args)
         if not res_full: continue
         
-        # 필터링
         if res_full.get('총 매매 횟수', 0) < min_tr: continue
         if res_full.get('승률 (%)', 0) < min_wr: continue
         if limit_mdd > 0 and res_full.get('MDD (%)', 0) < -abs(limit_mdd): continue
@@ -501,7 +512,6 @@ def auto_search_train_test(signal_ticker, trade_ticker, start_date, end_date, sp
 # ==========================================
 _init_default_state()
 
-# ✅ 프리셋 원본 복구
 PRESETS = {
     "SOXL 도전 전략": {"signal_ticker": "SOXL", "trade_ticker": "SOXL", "offset_cl_buy": 1, "buy_operator": ">", "offset_ma_buy": 1, "ma_buy": 20, "offset_cl_sell": 1, "sell_operator": ">", "offset_ma_sell": 20, "ma_sell": 10, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 10, "ma_compare_short": 5, "offset_compare_long": 20, "ma_compare_long": 5, "stop_loss_pct": 0.0, "take_profit_pct": 0.0},
     "SOXL 안전 전략": {"signal_ticker": "SOXL", "trade_ticker": "SOXL", "offset_cl_buy": 20, "buy_operator": ">", "offset_ma_buy": 50, "ma_buy": 10, "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 10, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 20, "ma_compare_short": 10, "offset_compare_long": 20, "ma_compare_long": 1, "stop_loss_pct": 35.0, "take_profit_pct": 15.0},
@@ -548,7 +558,6 @@ with st.sidebar:
                 params = {k: st.session_state[k] for k in ["signal_ticker_input","trade_ticker_input","ma_buy","offset_ma_buy","offset_cl_buy","buy_operator","ma_sell","offset_ma_sell","offset_cl_sell","sell_operator","use_trend_in_buy","use_trend_in_sell","ma_compare_short","ma_compare_long","offset_compare_short","offset_compare_long","stop_loss_pct","take_profit_pct","min_hold_days"]}
                 save_strategy_to_file(save_name, params)
                 st.rerun()
-        
         del_name = st.selectbox("삭제할 전략", list(load_saved_strategies().keys())) if load_saved_strategies() else None
         if del_name and st.button("삭제"):
             delete_strategy_from_file(del_name)
@@ -609,7 +618,6 @@ with st.expander("📈 상세 설정 (Offset, 비용 등)", expanded=True):
         if seed > 0: random.seed(seed)
 
     st.divider()
-    # ✅ RSI 설정
     st.markdown("#### 🔮 보조지표 설정")
     c_r1, c_r2 = st.columns(2)
     rsi_p = c_r1.number_input("RSI 기간 (Period)", 14, key="rsi_period")
@@ -645,6 +653,7 @@ with tab3:
         ma_pool = [ma_buy, ma_sell, ma_compare_short, ma_compare_long]
         base, x_sig, x_trd, ma_dict = prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool)
         if base is not None:
+            # 보조지표 파라미터 전달 확인
             res = backtest_fast(base, x_sig, x_trd, ma_dict, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offset_cl_buy, offset_cl_sell, ma_compare_short, ma_compare_long, offset_compare_short, offset_compare_long, 5000000, stop_loss_pct, take_profit_pct, strategy_behavior, min_hold_days, fee_bps, slip_bps, use_trend_in_buy, use_trend_in_sell, buy_operator, sell_operator, 
                                 use_rsi_filter=st.session_state.get("use_rsi_filter", False), rsi_period=st.session_state.get("rsi_period", 14), rsi_max=st.session_state.get("rsi_max", 70))
             st.session_state["bt_result"] = res
@@ -665,15 +674,15 @@ with tab3:
             benchmark = (df_log['종가'] / initial_price) * 5000000
             drawdown = (df_log['자산'] - df_log['자산'].cummax()) / df_log['자산'].cummax() * 100
 
-            # ✅ 3단 차트 (자산 / RSI / MDD)
+            # 3단 차트 구성 (Rows=3)
             fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.25, 0.25], 
                                 subplot_titles=("자산 & Benchmark", "RSI (14)", "MDD (%)"))
 
-            # 1. Asset & Benchmark
+            # 1. 자산
             fig.add_trace(go.Scatter(x=df_log['날짜'], y=df_log['자산'], name='내 전략', line=dict(color='#00F0FF', width=2)), row=1, col=1)
             fig.add_trace(go.Scatter(x=df_log['날짜'], y=benchmark, name='Buy & Hold', line=dict(color='gray', dash='dot')), row=1, col=1)
             
-            # 마커
+            # 매매 마커
             buys = df_log[df_log['신호']=='BUY']
             sells_reg = df_log[(df_log['신호']=='SELL') & (df_log['손절발동']==False) & (df_log['익절발동']==False)]
             sl = df_log[df_log['손절발동']==True]
@@ -684,14 +693,14 @@ with tab3:
             fig.add_trace(go.Scatter(x=sl['날짜'], y=sl['자산'], mode='markers', marker=dict(color='purple', symbol='x', size=12), name='손절'), row=1, col=1)
             fig.add_trace(go.Scatter(x=tp['날짜'], y=tp['자산'], mode='markers', marker=dict(color='gold', symbol='star', size=12), name='익절'), row=1, col=1)
 
-            # 2. RSI Chart
+            # 2. RSI
             if 'RSI' in df_log.columns:
                 fig.add_trace(go.Scatter(x=df_log['날짜'], y=df_log['RSI'], name='RSI', line=dict(color='orange', width=1)), row=2, col=1)
                 fig.add_hline(y=70, line_dash="dot", line_color="red", row=2, col=1)
                 fig.add_hline(y=30, line_dash="dot", line_color="green", row=2, col=1)
                 fig.add_hline(y=50, line_dash="dot", line_color="gray", row=2, col=1)
 
-            # 3. MDD Chart
+            # 3. MDD
             fig.add_trace(go.Scatter(x=df_log['날짜'], y=drawdown, name='MDD', line=dict(color='#FF4B4B', width=1), fill='tozeroy'), row=3, col=1)
 
             fig.update_layout(height=800, template="plotly_dark", hovermode="x unified")
@@ -710,7 +719,7 @@ with tab3:
             ))
             fig_heat.update_layout(title="월별 수익률 Heatmap", height=400)
             st.plotly_chart(fig_heat, use_container_width=True)
-            
+
             if st.button("✨ Gemini 분석"):
                 current_params = f"매수: {ma_buy}일 이평, 손절: {stop_loss_pct}%, 익절: {take_profit_pct}%"
                 anl = ask_gemini_analysis(res, current_params, trade_ticker, st.session_state.get("gemini_api_key"), st.session_state.get("selected_model_name", "gemini-pro"))
