@@ -53,9 +53,7 @@ def _init_default_state():
         "preset_name": "직접 설정",
         "gemini_api_key": "",
         "auto_run_trigger": False,
-        "use_rsi_filter": False, "rsi_period": 14, "rsi_min": 30, "rsi_max": 70,
-        # 모델명 직접 입력을 위해 기본값 설정
-        "selected_model_name": "models/gemini-1.5-flash" 
+        "use_rsi_filter": False, "rsi_period": 14, "rsi_min": 30, "rsi_max": 70
     }
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
@@ -143,7 +141,9 @@ def get_data(ticker: str, start_date, end_date) -> pd.DataFrame:
                 df = df.reset_index().rename(columns={"날짜":"Date","시가":"Open","고가":"High","저가":"Low","종가":"Close"})
         else:
             df = yf.download(t, start=start_date, end=end_date, progress=False, auto_adjust=False)
-            if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+            if isinstance(df.columns, pd.MultiIndex):
+                try: df = df.xs(t, axis=1, level=1) if t in df.columns.levels[1] else df.droplevel(1, axis=1)
+                except: df = df.droplevel(1, axis=1)
             df = df.reset_index()
             if "Datetime" in df.columns: df.rename(columns={"Datetime": "Date"}, inplace=True)
             if "Date" in df.columns and pd.api.types.is_datetime64_any_dtype(df["Date"]):
@@ -160,11 +160,9 @@ def get_yf_1m_grouped_close(ticker: str, tz: str, session_start: str, session_en
     try:
         df = yf.download(ticker, period="5d", interval="1m", auto_adjust=False, progress=False)
         if df.empty: return pd.Series(dtype=float), None, None
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-        is_crypto = "-USD" in ticker.upper() or "BTC" in ticker.upper()
+        if isinstance(df.columns, pd.MultiIndex): df = df.droplevel(1, axis=1)
         if df.index.tz is None: df.index = df.index.tz_localize("UTC")
-        df = df.tz_convert(tz)
-        if not is_crypto: df = df.between_time(session_start, session_end).copy()
+        df = df.tz_convert(tz).between_time(session_start, session_end).copy()
         if df.empty: return pd.Series(dtype=float), None, None
         df["session"] = df.index.date
         return df.groupby("session")["Close"].last(), float(df.iloc[-1]["Close"]), df.iloc[-1].name
@@ -205,9 +203,8 @@ def ask_gemini_analysis(summary, params, ticker, api_key, model_name):
     if not api_key: return "⚠️ API Key가 없습니다."
     try:
         genai.configure(api_key=api_key)
-        # ✅ 사용자가 입력한 모델명을 그대로 사용
-        model = genai.GenerativeModel(model_name)
-        
+        m_name = model_name if model_name and model_name.strip() else "gemini-pro"
+        model = genai.GenerativeModel(m_name)
         prompt = f"""
         전문 퀀트 투자자 관점에서 분석해주세요.
         [전략: {ticker}] {params}
@@ -216,10 +213,8 @@ def ask_gemini_analysis(summary, params, ticker, api_key, model_name):
         2. 실전 투자 적합성
         3. 파라미터 개선 제안
         """
-        with st.spinner(f"🤖 분석 중... (모델: {model_name})"):
-            return model.generate_content(prompt).text
-    except Exception as e:
-        return f"❌ 오류 발생 ({model_name}): {e}\n\n다른 모델을 시도해보세요."
+        with st.spinner("🤖 분석 중..."): return model.generate_content(prompt).text
+    except Exception as e: return f"❌ 오류: {e}"
 
 def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offset_cl_buy, offset_cl_sell, ma_compare_short, ma_compare_long, offset_compare_short, offset_compare_long, buy_operator, sell_operator, use_trend_in_buy, use_trend_in_sell):
     if df.empty: st.warning("데이터 없음"); return
@@ -351,7 +346,7 @@ def backtest_fast(base, x_sig, x_trd, ma_dict_sig, ma_buy, offset_ma_buy, ma_sel
             trend_ok = (ms >= ml)
 
         buy_base = (cl_b > ma_b) if buy_operator == ">" else (cl_b < ma_b)
-        sell_base = (cl_s < ma_s) if sell_operator == "<" else (cl_s > ma_s)
+        sell_base = (cl_s < ma_s) if (sell_operator == "<") else (cl_s > ma_s)
         buy_cond = (buy_base and trend_ok) if use_trend_in_buy else buy_base
         sell_cond = (sell_base and (not trend_ok)) if use_trend_in_sell else sell_base
 
@@ -464,6 +459,7 @@ def auto_search_train_test(signal_ticker, trade_ticker, start_date, end_date, sp
     min_tr = constraints.get("min_trades", 0)
     min_wr = constraints.get("min_winrate", 0)
     limit_mdd = constraints.get("limit_mdd", 0)
+    # ✅ 신규 필터 추가
     min_train_r = constraints.get("min_train_ret", -999.0)
     min_test_r = constraints.get("min_test_ret", -999.0)
 
@@ -490,15 +486,16 @@ def auto_search_train_test(signal_ticker, trade_ticker, start_date, end_date, sp
         res_full = backtest_fast(base_full, x_sig_full, x_trd_full, **common_args)
         if not res_full: continue
         
+        # 필터링
         if res_full.get('총 매매 횟수', 0) < min_tr: continue
         if res_full.get('승률 (%)', 0) < min_wr: continue
         if limit_mdd > 0 and res_full.get('MDD (%)', 0) < -abs(limit_mdd): continue
 
         res_tr = backtest_fast(base_tr, x_sig_tr, x_trd_tr, **common_args)
-        if res_tr.get('수익률 (%)', -999) < min_train_r: continue
+        if res_tr.get('수익률 (%)', -999) < min_train_r: continue # Train 수익률 필터
 
         res_te = backtest_fast(base_te, x_sig_te, x_trd_te, **common_args)
-        if res_te.get('수익률 (%)', -999) < min_test_r: continue
+        if res_te.get('수익률 (%)', -999) < min_test_r: continue # Test 수익률 필터
 
         row = {
             "Full_수익률(%)": res_full.get('수익률 (%)'), "Full_MDD(%)": res_full.get('MDD (%)'), "Full_승률(%)": res_full.get('승률 (%)'), "Full_총매매": res_full.get('총 매매 횟수'),
@@ -544,14 +541,18 @@ PRESETS.update(load_saved_strategies())
 
 with st.sidebar:
     st.header("⚙️ 설정 & Gemini")
-    
-    # ✅ [수정] 모델명 자유 입력 (기본값 설정)
-    model_name_input = st.text_input("Gemini 모델명", value="models/gemini-1.5-flash", help="사용할 모델명 입력 (예: models/gemini-1.5-pro, models/gemini-2.0-flash-exp)")
-    st.session_state["selected_model_name"] = model_name_input
-    
     api_key_input = st.text_input("Gemini API Key", type="password", key="gemini_key_input")
     if api_key_input: 
         st.session_state["gemini_api_key"] = api_key_input
+        try:
+            genai.configure(api_key=api_key_input)
+            models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            idx = 0
+            for i, m in enumerate(models):
+                if "gemini-1.5-flash" in m: idx = i; break
+            selected_model = st.selectbox("🤖 모델 선택", models, index=idx)
+            st.session_state["selected_model_name"] = selected_model
+        except: st.error("모델 로드 실패")
     
     st.divider()
     with st.expander("💾 전략 저장/삭제"):
@@ -561,6 +562,7 @@ with st.sidebar:
                 params = {k: st.session_state[k] for k in ["signal_ticker_input","trade_ticker_input","ma_buy","offset_ma_buy","offset_cl_buy","buy_operator","ma_sell","offset_ma_sell","offset_cl_sell","sell_operator","use_trend_in_buy","use_trend_in_sell","ma_compare_short","ma_compare_long","offset_compare_short","offset_compare_long","stop_loss_pct","take_profit_pct","min_hold_days"]}
                 save_strategy_to_file(save_name, params)
                 st.rerun()
+        
         del_name = st.selectbox("삭제할 전략", list(load_saved_strategies().keys())) if load_saved_strategies() else None
         if del_name and st.button("삭제"):
             delete_strategy_from_file(del_name)
@@ -621,6 +623,7 @@ with st.expander("📈 상세 설정 (Offset, 비용 등)", expanded=True):
         if seed > 0: random.seed(seed)
 
     st.divider()
+    # ✅ RSI 설정
     st.markdown("#### 🔮 보조지표 설정")
     c_r1, c_r2 = st.columns(2)
     rsi_p = c_r1.number_input("RSI 기간 (Period)", 14, key="rsi_period")
@@ -676,6 +679,7 @@ with tab3:
             benchmark = (df_log['종가'] / initial_price) * 5000000
             drawdown = (df_log['자산'] - df_log['자산'].cummax()) / df_log['자산'].cummax() * 100
 
+            # 3단 차트
             fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.25, 0.25], 
                                 subplot_titles=("자산 & Benchmark", "RSI (14)", "MDD (%)"))
 
@@ -718,35 +722,33 @@ with tab3:
             st.plotly_chart(fig_heat, use_container_width=True)
 
             if st.button("✨ Gemini 분석"):
-                # ✅ [수정] 0일 경우 '미사용'으로 텍스트 변경해서 AI에게 전달
-                sl_text = f"{stop_loss_pct}%" if stop_loss_pct > 0 else "미사용(무제한 버티기)"
-                tp_text = f"{take_profit_pct}%" if take_profit_pct > 0 else "미사용(수익 극대화)"
-                
-                current_params = f"""
-                - 매수 조건: {ma_buy}일 이평선 기준 (Offset {offset_ma_buy})
-                - 매도 조건: {ma_sell}일 이평선 기준 (Offset {offset_ma_sell})
-                - 손절(Stop Loss): {sl_text}
-                - 익절(Take Profit): {tp_text}
-                """
-                anl = ask_gemini_analysis(res, current_params, trade_ticker, st.session_state.get("gemini_api_key"), st.session_state.get("selected_model_name", "gemini-1.5-flash"))
-                st.session_state["ai_analysis"] = anl
+                sl_txt = f"{stop_loss_pct}%" if stop_loss_pct > 0 else "미설정"
+                tp_txt = f"{take_profit_pct}%" if take_profit_pct > 0 else "미설정"
+                current_params = f"매수: {ma_buy}일 이평, 손절: {sl_txt}, 익절: {tp_txt}"
+                anl = ask_gemini_analysis(res, current_params, trade_ticker, st.session_state.get("gemini_api_key"), st.session_state.get("selected_model_name", "gemini-pro"))
+                st.session_state["ai_analysis"] = anl    
             
             if "ai_analysis" in st.session_state: st.markdown(st.session_state["ai_analysis"])
             with st.expander("로그"): st.dataframe(df_log)
 
+# ✅ [Tab 4: 실험실 업데이트 (필터 및 기본값 수정)]
 with tab4:
     st.markdown("### 🧬 전략 파라미터 자동 최적화")
+    
     with st.expander("🔎 필터 및 정렬 설정", expanded=True):
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2 = st.columns(2)
         sort_metric = c1.selectbox("정렬 기준", ["Full_수익률(%)", "Test_수익률(%)", "Full_MDD(%)", "Full_승률(%)"])
-        min_trades = c2.number_input("최소 매매 횟수", 0, 100, 5)
-        min_win = c3.number_input("최소 승률 (%)", 0.0, 100.0, 50.0)
-        limit_mdd = c4.number_input("최대 낙폭(MDD) 제한 (%) (0=미사용)", 0.0, 100.0, 0.0)
-        top_n = st.slider("표시할 상위 개수", 1, 50, 10)
+        top_n = c2.slider("표시할 상위 개수", 1, 50, 10)
+        
+        c3, c4 = st.columns(2)
+        min_trades = c3.number_input("최소 매매 횟수", 0, 100, 5)
+        min_win = c4.number_input("최소 승률 (%)", 0.0, 100.0, 50.0)
         
         c5, c6 = st.columns(2)
         min_train_ret = c5.number_input("최소 Train 수익률 (%)", -100.0, 1000.0, 0.0)
         min_test_ret = c6.number_input("최소 Test 수익률 (%)", -100.0, 1000.0, 0.0)
+        
+        limit_mdd = st.number_input("최대 낙폭(MDD) 제한 (%) (0=미사용)", 0.0, 100.0, 0.0)
 
     colL, colR = st.columns(2)
     with colL:
@@ -790,7 +792,14 @@ with tab4:
             "offset_compare_short": _parse_choices(cand_off_s, "int"), "offset_compare_long": _parse_choices(cand_off_l, "int"),
             "stop_loss_pct": _parse_choices(cand_stop, "float"), "take_profit_pct": _parse_choices(cand_take, "float"),
         }
-        constraints = {"min_trades": min_trades, "min_winrate": min_win, "limit_mdd": limit_mdd, "min_train_ret": min_train_ret, "min_test_ret": min_test_ret}
+        
+        constraints = {
+            "min_trades": min_trades,
+            "min_winrate": min_win,
+            "limit_mdd": limit_mdd,
+            "min_train_ret": min_train_ret, # ✅ 신규 필터 적용
+            "min_test_ret": min_test_ret    # ✅ 신규 필터 적용
+        }
         
         with st.spinner("최적화 진행 중..."):
             df_opt = auto_search_train_test(
@@ -812,10 +821,14 @@ with tab4:
 
     if 'opt_results' in st.session_state:
         df_show = st.session_state['opt_results'].sort_values(st.session_state['sort_metric'], ascending=False).head(top_n)
+        
         st.markdown("#### 🏆 상위 결과 (적용 버튼을 누르면 즉시 백테스트 실행)")
+        
+        # 반복문으로 각 행마다 '적용' 버튼 생성
         for i, row in df_show.iterrows():
             c1, c2 = st.columns([4, 1])
             with c1:
+                # 주요 지표만 요약해서 보여줌
                 st.dataframe(
                     pd.DataFrame([row]), 
                     hide_index=True,
@@ -829,4 +842,5 @@ with tab4:
                     }
                 )
             with c2:
+                # on_click 콜백 사용
                 st.button(f"🥇 적용하기 #{i}", key=f"apply_{i}", on_click=apply_opt_params, args=(row,))
