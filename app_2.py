@@ -722,9 +722,11 @@ with tab3:
             st.plotly_chart(fig_heat, use_container_width=True)
 
             if st.button("✨ Gemini 분석"):
-                current_params = f"매수: {ma_buy}일 이평, 손절: {stop_loss_pct}%, 익절: {take_profit_pct}%"
+                sl_txt = f"{stop_loss_pct}%" if stop_loss_pct > 0 else "미설정"
+                tp_txt = f"{take_profit_pct}%" if take_profit_pct > 0 else "미설정"
+                current_params = f"매수: {ma_buy}일 이평, 손절: {sl_txt}, 익절: {tp_txt}"
                 anl = ask_gemini_analysis(res, current_params, trade_ticker, st.session_state.get("gemini_api_key"), st.session_state.get("selected_model_name", "gemini-pro"))
-                st.session_state["ai_analysis"] = anl
+                st.session_state["ai_analysis"] = anl    
             
             if "ai_analysis" in st.session_state: st.markdown(st.session_state["ai_analysis"])
             with st.expander("로그"): st.dataframe(df_log)
@@ -842,3 +844,4 @@ with tab4:
             with c2:
                 # on_click 콜백 사용
                 st.button(f"🥇 적용하기 #{i}", key=f"apply_{i}", on_click=apply_opt_params, args=(row,))
+
