@@ -7,6 +7,7 @@ plotly
 pykrx
 google-generativeai
 numpy
+setuptools
 
 # --- pykrx 의존 (환경에 따라 자동 설치되지만, 명시해두면 안정적) ---
 #requests
@@ -18,4 +19,5 @@ numpy
 #pip>=24
 #setuptools>=70
 #wheel
+
 
