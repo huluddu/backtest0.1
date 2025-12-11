@@ -11,7 +11,7 @@ import re
 import google.generativeai as genai
 import json
 import os
-import time  # ✅ 캐시 초기화 후 리로딩을 위해 추가
+import time
 
 # ==========================================
 # 1. 초기 설정 및 헬퍼 함수
@@ -55,7 +55,7 @@ def _init_default_state():
         "gemini_api_key": "",
         "auto_run_trigger": False,
         "use_rsi_filter": False, "rsi_period": 14, "rsi_min": 30, "rsi_max": 70,
-        "selected_model_name": "models/gemini-1.5-flash"
+        "selected_model_name": "models/gemini-1.5-flash" # 기본값 고정
     }
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
@@ -127,13 +127,14 @@ def _fast_ma(x: np.ndarray, w: int) -> np.ndarray:
     return y
 
 # ==========================================
-# 2. 데이터 로딩
+# 2. 데이터 로딩 (강화된 버전)
 # ==========================================
-@st.cache_data(show_spinner=False, ttl=3600)
+@st.cache_data(show_spinner=False, ttl=60)
 def get_data(ticker: str, start_date, end_date) -> pd.DataFrame:
     try:
         t = (ticker or "").strip()
         is_krx = t.isdigit() or t.lower().endswith(".ks") or t.lower().endswith(".kq")
+        
         if is_krx:
             code = _normalize_krx_ticker(t)
             s, e = start_date.strftime("%Y%m%d"), end_date.strftime("%Y%m%d")
@@ -142,29 +143,47 @@ def get_data(ticker: str, start_date, end_date) -> pd.DataFrame:
             if not df.empty:
                 df = df.reset_index().rename(columns={"날짜":"Date","시가":"Open","고가":"High","저가":"Low","종가":"Close"})
         else:
-            df = yf.download(t, start=start_date, end=end_date, progress=False, auto_adjust=False)
+            # yfinance 다운로드 옵션 강화
+            attempts = 0
+            while attempts < 2:
+                try:
+                    df = yf.download(t, start=start_date, end=end_date, progress=False, auto_adjust=False, ignore_tz=True, group_by='ticker')
+                    if not df.empty: break
+                except: pass
+                attempts += 1
+                time.sleep(0.5)
+
             if isinstance(df.columns, pd.MultiIndex):
-                try: df = df.xs(t, axis=1, level=1) if t in df.columns.levels[1] else df.droplevel(1, axis=1)
-                except: df = df.droplevel(1, axis=1)
+                try: df.columns = df.columns.get_level_values(0)
+                except: pass
+            
             df = df.reset_index()
             if "Datetime" in df.columns: df.rename(columns={"Datetime": "Date"}, inplace=True)
             if "Date" in df.columns and pd.api.types.is_datetime64_any_dtype(df["Date"]):
                 df["Date"] = df["Date"].dt.tz_localize(None)
 
         if df is None or df.empty: return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close"])
-        cols = ["Open", "High", "Low", "Close"]
-        df[cols] = df[cols].apply(pd.to_numeric, errors='coerce')
+        
+        req = ["Open", "High", "Low", "Close"]
+        for c in req:
+            if c not in df.columns: return pd.DataFrame(columns=["Date"] + req)
+            df[c] = pd.to_numeric(df[c], errors='coerce')
         return df[["Date", "Open", "High", "Low", "Close"]].dropna()
-    except: return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close"])
+    except Exception as e:
+        return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close"])
 
 @st.cache_data(show_spinner=False, ttl=30)
 def get_yf_1m_grouped_close(ticker: str, tz: str, session_start: str, session_end: str):
     try:
-        df = yf.download(ticker, period="5d", interval="1m", auto_adjust=False, progress=False)
+        df = yf.download(ticker, period="5d", interval="1m", auto_adjust=False, progress=False, ignore_tz=False)
         if df.empty: return pd.Series(dtype=float), None, None
-        if isinstance(df.columns, pd.MultiIndex): df = df.droplevel(1, axis=1)
+        
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+            
+        is_crypto = "-USD" in ticker.upper() or "BTC" in ticker.upper()
         if df.index.tz is None: df.index = df.index.tz_localize("UTC")
-        df = df.tz_convert(tz).between_time(session_start, session_end).copy()
+        df = df.tz_convert(tz)
+        if not is_crypto: df = df.between_time(session_start, session_end).copy()
         if df.empty: return pd.Series(dtype=float), None, None
         df["session"] = df.index.date
         return df.groupby("session")["Close"].last(), float(df.iloc[-1]["Close"]), df.iloc[-1].name
@@ -174,10 +193,15 @@ def get_yf_1m_grouped_close(ticker: str, tz: str, session_start: str, session_en
 def prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool):
     sig = get_data(signal_ticker, start_date, end_date).sort_values("Date")
     trd = get_data(trade_ticker,  start_date, end_date).sort_values("Date")
+    
     if sig.empty or trd.empty: return None, None, None, None
+    
     sig = sig.rename(columns={"Close": "Close_sig"})[["Date", "Close_sig"]]
     trd = trd.rename(columns={"Open": "Open_trd", "High": "High_trd", "Low": "Low_trd", "Close": "Close_trd"})
     base = pd.merge(sig, trd, on="Date", how="inner").dropna().reset_index(drop=True)
+    
+    if base.empty: return None, None, None, None
+
     x_sig = base["Close_sig"].to_numpy(dtype=float)
     x_trd = base["Close_trd"].to_numpy(dtype=float)
     ma_dict_sig = {}
@@ -186,7 +210,7 @@ def prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool):
     return base, x_sig, x_trd, ma_dict_sig
 
 # ==========================================
-# 3. 로직 함수 (보조지표 포함)
+# 3. 로직 함수
 # ==========================================
 def calculate_indicators(close_data, rsi_period, bb_period, bb_std):
     df = pd.DataFrame({'close': close_data})
@@ -205,7 +229,7 @@ def ask_gemini_analysis(summary, params, ticker, api_key, model_name):
     if not api_key: return "⚠️ API Key가 없습니다."
     try:
         genai.configure(api_key=api_key)
-        # ✅ 사용자가 입력한 모델명을 그대로 사용 (기본값: models/gemini-1.5-flash)
+        # ✅ 모델명을 고정 선택지에서 가져오므로 안전함
         model = genai.GenerativeModel(model_name)
         
         prompt = f"""
@@ -219,10 +243,10 @@ def ask_gemini_analysis(summary, params, ticker, api_key, model_name):
         with st.spinner(f"🤖 분석 중... (모델: {model_name})"):
             return model.generate_content(prompt).text
     except Exception as e:
-        return f"❌ 오류 발생 ({model_name}): {e}\n\n모델명을 확인하거나 다른 모델을 시도해보세요."
+        return f"❌ 오류 발생 ({model_name}): {e}"
 
 def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offset_cl_buy, offset_cl_sell, ma_compare_short, ma_compare_long, offset_compare_short, offset_compare_long, buy_operator, sell_operator, use_trend_in_buy, use_trend_in_sell):
-    if df.empty: st.warning("데이터 없음"); return
+    if df.empty: st.warning("데이터를 불러오지 못했습니다. 잠시 후 다시 시도하세요."); return
     df = df.copy().sort_values("Date").reset_index(drop=True)
     df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
     df["MA_BUY"], df["MA_SELL"] = df["Close"].rolling(ma_buy).mean(), df["Close"].rolling(ma_sell).mean()
@@ -254,7 +278,7 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offse
         if buy_ok: st.success("📈 매수 시그널!")
         elif sell_ok: st.error("📉 매도 시그널!")
         else: st.info("⏸ 관망")
-    except: st.error("데이터 부족")
+    except: st.error("데이터 부족 (이평선 계산 불가)")
 
 def summarize_signal_today(df, p):
     if df is None or df.empty: return {"label": "N/A", "last_buy": "-", "last_sell": "-", "last_hold": "-"}
@@ -410,7 +434,7 @@ def backtest_fast(base, x_sig, x_trd, ma_dict_sig, ma_buy, offset_ma_buy, ma_sel
         asset_curve.append(total)
         logs.append({
             "날짜": base["Date"].iloc[i], "종가": close_today, "신호": signal, "체결가": exec_price,
-            "자산": total, "이유": reason, "손절발동": stop_hit, "익절발동": take_hit, 
+            "자산": total, "이유": reason, "손절발동": stop_hit, "익절발동": take_hit,
             "RSI": rsi_arr[i] if use_rsi_filter and i < len(rsi_arr) else None
         })
 
@@ -546,7 +570,7 @@ PRESETS.update(load_saved_strategies())
 with st.sidebar:
     st.header("⚙️ 설정 & Gemini")
     
-    # ✅ 모델명 자유 입력 (기본값 설정)
+    # ✅ [수정] 모델명 자유 입력 (기본값 설정)
     model_name_input = st.text_input("Gemini 모델명", value="models/gemini-1.5-flash", help="사용할 모델명 입력 (예: models/gemini-1.5-pro, models/gemini-2.0-flash-exp)")
     st.session_state["selected_model_name"] = model_name_input
     
@@ -665,6 +689,7 @@ with tab3:
         ma_pool = [ma_buy, ma_sell, ma_compare_short, ma_compare_long]
         base, x_sig, x_trd, ma_dict = prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool)
         if base is not None:
+            # 보조지표 파라미터 전달 확인
             res = backtest_fast(base, x_sig, x_trd, ma_dict, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offset_cl_buy, offset_cl_sell, ma_compare_short, ma_compare_long, offset_compare_short, offset_compare_long, 5000000, stop_loss_pct, take_profit_pct, strategy_behavior, min_hold_days, fee_bps, slip_bps, use_trend_in_buy, use_trend_in_sell, buy_operator, sell_operator, 
                                 use_rsi_filter=st.session_state.get("use_rsi_filter", False), rsi_period=st.session_state.get("rsi_period", 14), rsi_max=st.session_state.get("rsi_max", 70))
             st.session_state["bt_result"] = res
@@ -685,12 +710,15 @@ with tab3:
             benchmark = (df_log['종가'] / initial_price) * 5000000
             drawdown = (df_log['자산'] - df_log['자산'].cummax()) / df_log['자산'].cummax() * 100
 
+            # 3단 차트 구성 (Rows=3)
             fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.25, 0.25], 
                                 subplot_titles=("자산 & Benchmark", "RSI (14)", "MDD (%)"))
 
+            # 1. 자산
             fig.add_trace(go.Scatter(x=df_log['날짜'], y=df_log['자산'], name='내 전략', line=dict(color='#00F0FF', width=2)), row=1, col=1)
             fig.add_trace(go.Scatter(x=df_log['날짜'], y=benchmark, name='Buy & Hold', line=dict(color='gray', dash='dot')), row=1, col=1)
             
+            # 매매 마커
             buys = df_log[df_log['신호']=='BUY']
             sells_reg = df_log[(df_log['신호']=='SELL') & (df_log['손절발동']==False) & (df_log['익절발동']==False)]
             sl = df_log[df_log['손절발동']==True]
@@ -701,16 +729,32 @@ with tab3:
             fig.add_trace(go.Scatter(x=sl['날짜'], y=sl['자산'], mode='markers', marker=dict(color='purple', symbol='x', size=12), name='손절'), row=1, col=1)
             fig.add_trace(go.Scatter(x=tp['날짜'], y=tp['자산'], mode='markers', marker=dict(color='gold', symbol='star', size=12), name='익절'), row=1, col=1)
 
+            # 2. RSI
             if 'RSI' in df_log.columns:
                 fig.add_trace(go.Scatter(x=df_log['날짜'], y=df_log['RSI'], name='RSI', line=dict(color='orange', width=1)), row=2, col=1)
                 fig.add_hline(y=70, line_dash="dot", line_color="red", row=2, col=1)
                 fig.add_hline(y=30, line_dash="dot", line_color="green", row=2, col=1)
                 fig.add_hline(y=50, line_dash="dot", line_color="gray", row=2, col=1)
 
+            # 3. MDD
             fig.add_trace(go.Scatter(x=df_log['날짜'], y=drawdown, name='MDD', line=dict(color='#FF4B4B', width=1), fill='tozeroy'), row=3, col=1)
 
             fig.update_layout(height=800, template="plotly_dark", hovermode="x unified")
             st.plotly_chart(fig, use_container_width=True)
+
+            # 월별 수익률 히트맵
+            st.markdown("### 📅 월별 수익률")
+            df_log['Year'] = df_log['날짜'].dt.year
+            df_log['Month'] = df_log['날짜'].dt.month
+            df_log['Returns'] = df_log['자산'].pct_change()
+            monthly_ret = df_log.groupby(['Year', 'Month'])['Returns'].apply(lambda x: (x + 1).prod() - 1).reset_index()
+            pivot_ret = monthly_ret.pivot(index='Year', columns='Month', values='Returns')
+            fig_heat = go.Figure(data=go.Heatmap(
+                z=pivot_ret.values * 100, x=pivot_ret.columns, y=pivot_ret.index,
+                colorscale='RdBu', zmid=0, texttemplate="%{z:.1f}%"
+            ))
+            fig_heat.update_layout(title="월별 수익률 Heatmap", height=400)
+            st.plotly_chart(fig_heat, use_container_width=True)
 
             if st.button("✨ Gemini 분석"):
                 sl_txt = f"{stop_loss_pct}%" if stop_loss_pct > 0 else "미설정"
@@ -800,7 +844,21 @@ with tab4:
 
     if 'opt_results' in st.session_state:
         df_show = st.session_state['opt_results'].sort_values(st.session_state['sort_metric'], ascending=False).head(top_n)
+        st.markdown("#### 🏆 상위 결과 (적용 버튼을 누르면 즉시 백테스트 실행)")
         for i, row in df_show.iterrows():
             c1, c2 = st.columns([4, 1])
-            with c1: st.dataframe(pd.DataFrame([row]), hide_index=True)
-            with c2: st.button(f"🥇 적용 #{i}", key=f"apply_{i}", on_click=apply_opt_params, args=(row,))
+            with c1:
+                st.dataframe(
+                    pd.DataFrame([row]), 
+                    hide_index=True,
+                    column_config={
+                        "Full_수익률(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Test_수익률(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Train_수익률(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Full_MDD(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Test_MDD(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Full_승률(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                    }
+                )
+            with c2:
+                st.button(f"🥇 적용하기 #{i}", key=f"apply_{i}", on_click=apply_opt_params, args=(row,))
