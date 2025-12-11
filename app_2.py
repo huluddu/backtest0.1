@@ -11,6 +11,7 @@ import re
 import google.generativeai as genai
 import json
 import os
+import time
 
 # ==========================================
 # 1. 초기 설정 및 헬퍼 함수
@@ -53,7 +54,8 @@ def _init_default_state():
         "preset_name": "직접 설정",
         "gemini_api_key": "",
         "auto_run_trigger": False,
-        "use_rsi_filter": False, "rsi_period": 14, "rsi_min": 30, "rsi_max": 70
+        "use_rsi_filter": False, "rsi_period": 14, "rsi_min": 30, "rsi_max": 70,
+        "selected_model_name": "models/gemini-1.5-flash"
     }
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
@@ -125,13 +127,14 @@ def _fast_ma(x: np.ndarray, w: int) -> np.ndarray:
     return y
 
 # ==========================================
-# 2. 데이터 로딩
+# 2. 데이터 로딩 (강화된 버전)
 # ==========================================
-@st.cache_data(show_spinner=False, ttl=3600)
+@st.cache_data(show_spinner=False, ttl=60) # 캐시 유지 시간 단축
 def get_data(ticker: str, start_date, end_date) -> pd.DataFrame:
     try:
         t = (ticker or "").strip()
         is_krx = t.isdigit() or t.lower().endswith(".ks") or t.lower().endswith(".kq")
+        
         if is_krx:
             code = _normalize_krx_ticker(t)
             s, e = start_date.strftime("%Y%m%d"), end_date.strftime("%Y%m%d")
@@ -140,29 +143,53 @@ def get_data(ticker: str, start_date, end_date) -> pd.DataFrame:
             if not df.empty:
                 df = df.reset_index().rename(columns={"날짜":"Date","시가":"Open","고가":"High","저가":"Low","종가":"Close"})
         else:
-            df = yf.download(t, start=start_date, end=end_date, progress=False, auto_adjust=False)
+            # 🚀 [수정] yfinance 다운로드 옵션 강화 & 재시도 로직
+            attempts = 0
+            while attempts < 2:
+                try:
+                    df = yf.download(t, start=start_date, end=end_date, progress=False, auto_adjust=False, ignore_tz=True, group_by='ticker')
+                    if not df.empty: break
+                except:
+                    pass
+                attempts += 1
+                time.sleep(0.5) # 0.5초 대기 후 재시도
+
+            # MultiIndex 처리 (Price, Ticker) -> Price
             if isinstance(df.columns, pd.MultiIndex):
-                try: df = df.xs(t, axis=1, level=1) if t in df.columns.levels[1] else df.droplevel(1, axis=1)
-                except: df = df.droplevel(1, axis=1)
+                # 단일 티커일 경우 level 0만 남기기 시도
+                try: df.columns = df.columns.get_level_values(0)
+                except: pass
+            
             df = df.reset_index()
             if "Datetime" in df.columns: df.rename(columns={"Datetime": "Date"}, inplace=True)
             if "Date" in df.columns and pd.api.types.is_datetime64_any_dtype(df["Date"]):
                 df["Date"] = df["Date"].dt.tz_localize(None)
 
-        if df is None or df.empty: return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close"])
-        cols = ["Open", "High", "Low", "Close"]
-        df[cols] = df[cols].apply(pd.to_numeric, errors='coerce')
+        if df is None or df.empty: 
+            # 빈 데이터일 경우 사용자에게 알림 없이 빈 프레임 반환 (UI에서 처리)
+            return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close"])
+        
+        req = ["Open", "High", "Low", "Close"]
+        for c in req:
+            if c not in df.columns: return pd.DataFrame(columns=["Date"] + req)
+            df[c] = pd.to_numeric(df[c], errors='coerce')
         return df[["Date", "Open", "High", "Low", "Close"]].dropna()
-    except: return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close"])
+    except Exception as e:
+        return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close"])
 
 @st.cache_data(show_spinner=False, ttl=30)
 def get_yf_1m_grouped_close(ticker: str, tz: str, session_start: str, session_end: str):
     try:
-        df = yf.download(ticker, period="5d", interval="1m", auto_adjust=False, progress=False)
+        # 실시간 데이터도 안전하게 호출
+        df = yf.download(ticker, period="5d", interval="1m", auto_adjust=False, progress=False, ignore_tz=False)
         if df.empty: return pd.Series(dtype=float), None, None
-        if isinstance(df.columns, pd.MultiIndex): df = df.droplevel(1, axis=1)
+        
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+            
+        is_crypto = "-USD" in ticker.upper() or "BTC" in ticker.upper()
         if df.index.tz is None: df.index = df.index.tz_localize("UTC")
-        df = df.tz_convert(tz).between_time(session_start, session_end).copy()
+        df = df.tz_convert(tz)
+        if not is_crypto: df = df.between_time(session_start, session_end).copy()
         if df.empty: return pd.Series(dtype=float), None, None
         df["session"] = df.index.date
         return df.groupby("session")["Close"].last(), float(df.iloc[-1]["Close"]), df.iloc[-1].name
@@ -172,10 +199,16 @@ def get_yf_1m_grouped_close(ticker: str, tz: str, session_start: str, session_en
 def prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool):
     sig = get_data(signal_ticker, start_date, end_date).sort_values("Date")
     trd = get_data(trade_ticker,  start_date, end_date).sort_values("Date")
+    
+    # 데이터가 없으면 None 반환
     if sig.empty or trd.empty: return None, None, None, None
+    
     sig = sig.rename(columns={"Close": "Close_sig"})[["Date", "Close_sig"]]
     trd = trd.rename(columns={"Open": "Open_trd", "High": "High_trd", "Low": "Low_trd", "Close": "Close_trd"})
     base = pd.merge(sig, trd, on="Date", how="inner").dropna().reset_index(drop=True)
+    
+    if base.empty: return None, None, None, None # 병합 후 데이터 없음
+
     x_sig = base["Close_sig"].to_numpy(dtype=float)
     x_trd = base["Close_trd"].to_numpy(dtype=float)
     ma_dict_sig = {}
@@ -203,21 +236,32 @@ def ask_gemini_analysis(summary, params, ticker, api_key, model_name):
     if not api_key: return "⚠️ API Key가 없습니다."
     try:
         genai.configure(api_key=api_key)
-        m_name = model_name if model_name and model_name.strip() else "gemini-pro"
-        model = genai.GenerativeModel(m_name)
-        prompt = f"""
-        전문 퀀트 투자자 관점에서 분석해주세요.
-        [전략: {ticker}] {params}
-        [결과] 수익률: {summary.get('수익률 (%)')}%, MDD: {summary.get('MDD (%)')}%, 승률: {summary.get('승률 (%)')}%
-        1. 리스크 분석
-        2. 실전 투자 적합성
-        3. 파라미터 개선 제안
-        """
-        with st.spinner("🤖 분석 중..."): return model.generate_content(prompt).text
+        target_model = model_name if "models/" in model_name else f"models/{model_name}"
+        fallback_model = "models/gemini-1.5-flash"
+
+        try:
+            model = genai.GenerativeModel(target_model)
+            prompt = f"""
+            전문 퀀트 투자자 관점에서 분석해주세요.
+            [전략: {ticker}] {params}
+            [결과] 수익률: {summary.get('수익률 (%)')}%, MDD: {summary.get('MDD (%)')}%, 승률: {summary.get('승률 (%)')}%
+            1. 리스크 분석
+            2. 실전 투자 적합성
+            3. 파라미터 개선 제안
+            """
+            with st.spinner(f"🤖 분석 중... (모델: {target_model})"):
+                return model.generate_content(prompt).text
+        except Exception as e:
+             if "404" in str(e) or "not found" in str(e).lower():
+                 with st.spinner(f"⚠️ 모델 변경 후 재시도: {fallback_model}"):
+                     model = genai.GenerativeModel(fallback_model)
+                     return model.generate_content(prompt).text
+             return f"❌ 오류: {e}"
+
     except Exception as e: return f"❌ 오류: {e}"
 
 def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offset_cl_buy, offset_cl_sell, ma_compare_short, ma_compare_long, offset_compare_short, offset_compare_long, buy_operator, sell_operator, use_trend_in_buy, use_trend_in_sell):
-    if df.empty: st.warning("데이터 없음"); return
+    if df.empty: st.warning("데이터를 불러오지 못했습니다. 티커를 확인하거나 잠시 후 다시 시도하세요."); return
     df = df.copy().sort_values("Date").reset_index(drop=True)
     df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
     df["MA_BUY"], df["MA_SELL"] = df["Close"].rolling(ma_buy).mean(), df["Close"].rolling(ma_sell).mean()
@@ -249,7 +293,7 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offse
         if buy_ok: st.success("📈 매수 시그널!")
         elif sell_ok: st.error("📉 매도 시그널!")
         else: st.info("⏸ 관망")
-    except: st.error("데이터 부족")
+    except: st.error("데이터 부족 (이평선을 계산하기에 데이터가 모자랍니다)")
 
 def summarize_signal_today(df, p):
     if df is None or df.empty: return {"label": "N/A", "last_buy": "-", "last_sell": "-", "last_hold": "-"}
@@ -459,7 +503,6 @@ def auto_search_train_test(signal_ticker, trade_ticker, start_date, end_date, sp
     min_tr = constraints.get("min_trades", 0)
     min_wr = constraints.get("min_winrate", 0)
     limit_mdd = constraints.get("limit_mdd", 0)
-    # ✅ 신규 필터 추가
     min_train_r = constraints.get("min_train_ret", -999.0)
     min_test_r = constraints.get("min_test_ret", -999.0)
 
@@ -492,10 +535,10 @@ def auto_search_train_test(signal_ticker, trade_ticker, start_date, end_date, sp
         if limit_mdd > 0 and res_full.get('MDD (%)', 0) < -abs(limit_mdd): continue
 
         res_tr = backtest_fast(base_tr, x_sig_tr, x_trd_tr, **common_args)
-        if res_tr.get('수익률 (%)', -999) < min_train_r: continue # Train 수익률 필터
+        if res_tr.get('수익률 (%)', -999) < min_train_r: continue
 
         res_te = backtest_fast(base_te, x_sig_te, x_trd_te, **common_args)
-        if res_te.get('수익률 (%)', -999) < min_test_r: continue # Test 수익률 필터
+        if res_te.get('수익률 (%)', -999) < min_test_r: continue
 
         row = {
             "Full_수익률(%)": res_full.get('수익률 (%)'), "Full_MDD(%)": res_full.get('MDD (%)'), "Full_승률(%)": res_full.get('승률 (%)'), "Full_총매매": res_full.get('총 매매 횟수'),
@@ -518,15 +561,13 @@ _init_default_state()
 
 PRESETS = {
     "SOXL 도전 전략": {"signal_ticker": "SOXL", "trade_ticker": "SOXL", "offset_cl_buy": 1, "buy_operator": ">", "offset_ma_buy": 1, "ma_buy": 20, "offset_cl_sell": 1, "sell_operator": ">", "offset_ma_sell": 20, "ma_sell": 10, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 10, "ma_compare_short": 5, "offset_compare_long": 20, "ma_compare_long": 5, "stop_loss_pct": 0.0, "take_profit_pct": 0.0},
-    "SOXL 안전 전략": {"signal_ticker": "SOXL", "trade_ticker": "SOXL", "offset_cl_buy": 20, "buy_operator": ">", "offset_ma_buy": 50, "ma_buy": 10, "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 10, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 20, "ma_compare_short": 10, "offset_compare_long": 20, "ma_compare_long": 1, "stop_loss_pct": 35.0, "take_profit_pct": 15.0},
+    "TQQQ 안전 전략": {"signal_ticker": "TQQQ", "trade_ticker": "TQQQ", "offset_cl_buy": 10, "buy_operator": "<", "offset_ma_buy": 50, "ma_buy": 20, "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 10, "ma_sell": 20, "use_trend_in_buy": True, "use_trend_in_sell": True, "stop_loss_pct": 25.0, "take_profit_pct": 25.0},
+    "BITX 전략": {"signal_ticker": "BITX", "trade_ticker": "BITX", "offset_cl_buy": 16, "buy_operator": ">", "offset_ma_buy": 26, "ma_buy": 5, "offset_cl_sell": 26, "sell_operator": ">", "offset_ma_sell": 2, "ma_sell": 15, "use_trend_in_buy": True, "use_trend_in_sell": True, "ma_compare_short": 15, "ma_compare_long": 15, "stop_loss_pct": 30.0},
     "TSLL 안전 전략": {"signal_ticker": "TSLL", "trade_ticker": "TSLL", "offset_cl_buy": 20, "buy_operator": "<", "offset_ma_buy": 50, "ma_buy": 20, "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 20, "ma_sell": 10, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 1, "ma_compare_short": 10, "offset_compare_long": 50, "ma_compare_long": 50, "stop_loss_pct": 25.0, "take_profit_pct": 15.0},
     "TSLL 도전 전략": {"signal_ticker": "TSLL", "trade_ticker": "TSLL", "offset_cl_buy": 50, "buy_operator": ">", "offset_ma_buy": 50, "ma_buy": 10, "offset_cl_sell": 10, "sell_operator": "<", "offset_ma_sell": 10, "ma_sell": 20, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 50, "ma_compare_short": 50, "offset_compare_long": 50, "ma_compare_long": 5, "stop_loss_pct": 0.0, "take_profit_pct": 0.0},
     "GGLL 전략": {"signal_ticker": "GGLL", "trade_ticker": "GGLL", "offset_cl_buy": 1, "buy_operator": "<", "offset_ma_buy": 1, "ma_buy": 20, "offset_cl_sell": 20, "sell_operator": "<", "offset_ma_sell": 20, "ma_sell": 50, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 20, "ma_compare_short": 1, "offset_compare_long": 50, "ma_compare_long": 1, "stop_loss_pct": 15.0, "take_profit_pct": 0.0},
     "GGLL 안전 전략": {"signal_ticker": "GGLL", "trade_ticker": "GGLL", "offset_cl_buy": 10, "buy_operator": ">", "offset_ma_buy": 50, "ma_buy": 5, "offset_cl_sell": 10, "sell_operator": "<", "offset_ma_sell": 20, "ma_sell": 20, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 10, "ma_compare_short": 20, "offset_compare_long": 50, "ma_compare_long": 10, "stop_loss_pct": 20.0, "take_profit_pct": 20.0},
     "GGLL 안전 전략2": {"signal_ticker": "GGLL", "trade_ticker": "GGLL", "offset_cl_buy": 50, "buy_operator": "<", "offset_ma_buy": 20, "ma_buy": 1, "offset_cl_sell": 20, "sell_operator": "<", "offset_ma_sell": 1, "ma_sell": 1, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 1, "ma_compare_short": 10, "offset_compare_long": 50, "ma_compare_long": 10, "stop_loss_pct": 20.0, "take_profit_pct": 30.0},
-    "BITX 전략": {"signal_ticker": "BITX", "trade_ticker": "BITX", "offset_cl_buy": 16, "buy_operator": ">", "offset_ma_buy": 26, "ma_buy": 5, "offset_cl_sell": 26, "sell_operator": ">", "offset_ma_sell": 2, "ma_sell": 15, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 26, "ma_compare_short": 15, "offset_compare_long": 6, "ma_compare_long": 15, "stop_loss_pct": 30.0, "take_profit_pct": 0.0},
-    "TQQQ 도전 전략": {"signal_ticker": "TQQQ", "trade_ticker": "TQQQ", "offset_cl_buy": 50, "buy_operator": ">", "offset_ma_buy": 10, "ma_buy": 1, "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 1, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 1, "ma_compare_short": 50, "offset_compare_long": 10, "ma_compare_long": 1, "stop_loss_pct": 15.0, "take_profit_pct": 25.0},
-    "TQQQ 안전 전략": {"signal_ticker": "TQQQ", "trade_ticker": "TQQQ", "offset_cl_buy": 10, "buy_operator": "<", "offset_ma_buy": 50, "ma_buy": 20, "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 10, "ma_sell": 20, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 10, "ma_compare_short": 50, "offset_compare_long": 20, "ma_compare_long": 20, "stop_loss_pct": 25.0, "take_profit_pct": 25.0},
     "BITX-TQQQ 안전": {"signal_ticker": "BITX", "trade_ticker": "TQQQ", "offset_cl_buy": 10, "buy_operator": ">", "offset_ma_buy": 10, "ma_buy": 20, "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 5, "use_trend_in_buy": False, "use_trend_in_sell": True, "offset_compare_short": 50, "ma_compare_short": 5, "offset_compare_long": 1, "ma_compare_long": 50, "stop_loss_pct": 0.0, "take_profit_pct": 15.0},
     "BITX-TQQQ 도전": {"signal_ticker": "BITX", "trade_ticker": "TQQQ", "offset_cl_buy": 50, "buy_operator": "<", "offset_ma_buy": 20, "ma_buy": 50, "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 10, "ma_sell": 5, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 10, "ma_compare_short": 1, "offset_compare_long": 20, "ma_compare_long": 1, "stop_loss_pct": 25.0, "take_profit_pct": 25.0},
     "BTC-TQQQ": {"signal_ticker": "BTC-USD", "trade_ticker": "TQQQ", "offset_cl_buy": 10, "buy_operator": ">", "offset_ma_buy": 1, "ma_buy": 20, "offset_cl_sell": 50, "sell_operator": "<", "offset_ma_sell": 1, "ma_sell": 10, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 1, "ma_compare_short": 5, "offset_compare_long": 10, "ma_compare_long": 5, "stop_loss_pct": 15.0, "take_profit_pct": 15.0},
@@ -541,18 +582,14 @@ PRESETS.update(load_saved_strategies())
 
 with st.sidebar:
     st.header("⚙️ 설정 & Gemini")
+    
+    # ✅ 모델명 자유 입력 (기본값 설정)
+    model_name_input = st.text_input("Gemini 모델명", value="models/gemini-1.5-flash", help="사용할 모델명 입력 (예: models/gemini-1.5-pro, models/gemini-2.0-flash-exp)")
+    st.session_state["selected_model_name"] = model_name_input
+    
     api_key_input = st.text_input("Gemini API Key", type="password", key="gemini_key_input")
     if api_key_input: 
         st.session_state["gemini_api_key"] = api_key_input
-        try:
-            genai.configure(api_key=api_key_input)
-            models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            idx = 0
-            for i, m in enumerate(models):
-                if "gemini-1.5-flash" in m: idx = i; break
-            selected_model = st.selectbox("🤖 모델 선택", models, index=idx)
-            st.session_state["selected_model_name"] = selected_model
-        except: st.error("모델 로드 실패")
     
     st.divider()
     with st.expander("💾 전략 저장/삭제"):
@@ -623,7 +660,6 @@ with st.expander("📈 상세 설정 (Offset, 비용 등)", expanded=True):
         if seed > 0: random.seed(seed)
 
     st.divider()
-    # ✅ RSI 설정
     st.markdown("#### 🔮 보조지표 설정")
     c_r1, c_r2 = st.columns(2)
     rsi_p = c_r1.number_input("RSI 기간 (Period)", 14, key="rsi_period")
@@ -679,7 +715,6 @@ with tab3:
             benchmark = (df_log['종가'] / initial_price) * 5000000
             drawdown = (df_log['자산'] - df_log['자산'].cummax()) / df_log['자산'].cummax() * 100
 
-            # 3단 차트
             fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.25, 0.25], 
                                 subplot_titles=("자산 & Benchmark", "RSI (14)", "MDD (%)"))
 
@@ -707,48 +742,29 @@ with tab3:
             fig.update_layout(height=800, template="plotly_dark", hovermode="x unified")
             st.plotly_chart(fig, use_container_width=True)
 
-            # 월별 수익률 히트맵
-            st.markdown("### 📅 월별 수익률")
-            df_log['Year'] = df_log['날짜'].dt.year
-            df_log['Month'] = df_log['날짜'].dt.month
-            df_log['Returns'] = df_log['자산'].pct_change()
-            monthly_ret = df_log.groupby(['Year', 'Month'])['Returns'].apply(lambda x: (x + 1).prod() - 1).reset_index()
-            pivot_ret = monthly_ret.pivot(index='Year', columns='Month', values='Returns')
-            fig_heat = go.Figure(data=go.Heatmap(
-                z=pivot_ret.values * 100, x=pivot_ret.columns, y=pivot_ret.index,
-                colorscale='RdBu', zmid=0, texttemplate="%{z:.1f}%"
-            ))
-            fig_heat.update_layout(title="월별 수익률 Heatmap", height=400)
-            st.plotly_chart(fig_heat, use_container_width=True)
-
             if st.button("✨ Gemini 분석"):
                 sl_txt = f"{stop_loss_pct}%" if stop_loss_pct > 0 else "미설정"
                 tp_txt = f"{take_profit_pct}%" if take_profit_pct > 0 else "미설정"
                 current_params = f"매수: {ma_buy}일 이평, 손절: {sl_txt}, 익절: {tp_txt}"
-                anl = ask_gemini_analysis(res, current_params, trade_ticker, st.session_state.get("gemini_api_key"), st.session_state.get("selected_model_name", "gemini-pro"))
-                st.session_state["ai_analysis"] = anl    
+                anl = ask_gemini_analysis(res, current_params, trade_ticker, st.session_state.get("gemini_api_key"), st.session_state.get("selected_model_name", "gemini-1.5-flash"))
+                st.session_state["ai_analysis"] = anl
             
             if "ai_analysis" in st.session_state: st.markdown(st.session_state["ai_analysis"])
             with st.expander("로그"): st.dataframe(df_log)
 
-# ✅ [Tab 4: 실험실 업데이트 (필터 및 기본값 수정)]
 with tab4:
     st.markdown("### 🧬 전략 파라미터 자동 최적화")
-    
     with st.expander("🔎 필터 및 정렬 설정", expanded=True):
-        c1, c2 = st.columns(2)
+        c1, c2, c3, c4 = st.columns(4)
         sort_metric = c1.selectbox("정렬 기준", ["Full_수익률(%)", "Test_수익률(%)", "Full_MDD(%)", "Full_승률(%)"])
-        top_n = c2.slider("표시할 상위 개수", 1, 50, 10)
-        
-        c3, c4 = st.columns(2)
-        min_trades = c3.number_input("최소 매매 횟수", 0, 100, 5)
-        min_win = c4.number_input("최소 승률 (%)", 0.0, 100.0, 50.0)
+        min_trades = c2.number_input("최소 매매 횟수", 0, 100, 5)
+        min_win = c3.number_input("최소 승률 (%)", 0.0, 100.0, 50.0)
+        limit_mdd = c4.number_input("최대 낙폭(MDD) 제한 (%) (0=미사용)", 0.0, 100.0, 0.0)
+        top_n = st.slider("표시할 상위 개수", 1, 50, 10)
         
         c5, c6 = st.columns(2)
         min_train_ret = c5.number_input("최소 Train 수익률 (%)", -100.0, 1000.0, 0.0)
         min_test_ret = c6.number_input("최소 Test 수익률 (%)", -100.0, 1000.0, 0.0)
-        
-        limit_mdd = st.number_input("최대 낙폭(MDD) 제한 (%) (0=미사용)", 0.0, 100.0, 0.0)
 
     colL, colR = st.columns(2)
     with colL:
@@ -792,14 +808,7 @@ with tab4:
             "offset_compare_short": _parse_choices(cand_off_s, "int"), "offset_compare_long": _parse_choices(cand_off_l, "int"),
             "stop_loss_pct": _parse_choices(cand_stop, "float"), "take_profit_pct": _parse_choices(cand_take, "float"),
         }
-        
-        constraints = {
-            "min_trades": min_trades,
-            "min_winrate": min_win,
-            "limit_mdd": limit_mdd,
-            "min_train_ret": min_train_ret, # ✅ 신규 필터 적용
-            "min_test_ret": min_test_ret    # ✅ 신규 필터 적용
-        }
+        constraints = {"min_trades": min_trades, "min_winrate": min_win, "limit_mdd": limit_mdd, "min_train_ret": min_train_ret, "min_test_ret": min_test_ret}
         
         with st.spinner("최적화 진행 중..."):
             df_opt = auto_search_train_test(
@@ -821,26 +830,7 @@ with tab4:
 
     if 'opt_results' in st.session_state:
         df_show = st.session_state['opt_results'].sort_values(st.session_state['sort_metric'], ascending=False).head(top_n)
-        
-        st.markdown("#### 🏆 상위 결과 (적용 버튼을 누르면 즉시 백테스트 실행)")
-        
-        # 반복문으로 각 행마다 '적용' 버튼 생성
         for i, row in df_show.iterrows():
             c1, c2 = st.columns([4, 1])
-            with c1:
-                # 주요 지표만 요약해서 보여줌
-                st.dataframe(
-                    pd.DataFrame([row]), 
-                    hide_index=True,
-                    column_config={
-                        "Full_수익률(%)": st.column_config.NumberColumn(format="%.2f%%"),
-                        "Test_수익률(%)": st.column_config.NumberColumn(format="%.2f%%"),
-                        "Train_수익률(%)": st.column_config.NumberColumn(format="%.2f%%"),
-                        "Full_MDD(%)": st.column_config.NumberColumn(format="%.2f%%"),
-                        "Test_MDD(%)": st.column_config.NumberColumn(format="%.2f%%"),
-                        "Full_승률(%)": st.column_config.NumberColumn(format="%.2f%%"),
-                    }
-                )
-            with c2:
-                # on_click 콜백 사용
-                st.button(f"🥇 적용하기 #{i}", key=f"apply_{i}", on_click=apply_opt_params, args=(row,))
+            with c1: st.dataframe(pd.DataFrame([row]), hide_index=True)
+            with c2: st.button(f"🥇 적용 #{i}", key=f"apply_{i}", on_click=apply_opt_params, args=(row,))
