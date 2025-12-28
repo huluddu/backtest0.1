@@ -15,7 +15,7 @@ import os
 # ==========================================
 # 1. 초기 설정 및 헬퍼 함수
 # ==========================================
-st.set_page_config(page_title="시그널 대시보드 Ultimate (Fixed)", page_icon="📈", layout="wide")
+st.set_page_config(page_title="시그널 대시보드 Ultimate (Final)", page_icon="📈", layout="wide")
 
 STRATEGY_FILE = "my_strategies.json"
 
@@ -40,7 +40,6 @@ def delete_strategy_from_file(name):
     return False
 
 def _init_default_state():
-    # 기본값 설정 (앱 켜질 때 한 번만 실행됨)
     defaults = {
         "signal_ticker_input": "SOXL", "trade_ticker_input": "SOXL",
         "buy_operator": ">", "sell_operator": "<",
@@ -61,28 +60,21 @@ def _init_default_state():
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
 
-# [핵심 수정] 프리셋 변경 시 session_state를 강제로 업데이트하는 함수
 def _on_preset_change():
-    # 현재 선택된 프리셋 이름 가져오기
-    name = st.session_state["preset_name_selector"] # selectbox key 변경함
+    name = st.session_state["preset_name_selector"]
     st.session_state["preset_name"] = name
     
-    # 전역변수 PRESETS에 접근하기 위해 session_state에 저장해둔 값 사용
     all_presets = st.session_state.get("ALL_PRESETS_DATA", {})
     preset = all_presets.get(name, {})
     
     if not preset: return
 
-    # 프리셋 값을 현재 세션 상태(입력창)에 덮어씌움
     for k, v in preset.items():
-        # 티커 이름 매핑 처리
         key_name = k
         if k == "signal_ticker": key_name = "signal_ticker_input"
         elif k == "trade_ticker": key_name = "trade_ticker_input"
         
-        # 실제 존재하는 키만 업데이트
         if key_name in st.session_state:
-            # 타입 캐스팅 (float/int 문제 방지)
             try:
                 if isinstance(st.session_state[key_name], bool):
                     st.session_state[key_name] = bool(v)
@@ -112,7 +104,7 @@ def apply_opt_params(row):
             "auto_run_trigger": True
         }
         for k, v in updates.items(): st.session_state[k] = v
-        st.session_state["preset_name_selector"] = "직접 설정" # 프리셋 풀기
+        st.session_state["preset_name_selector"] = "직접 설정"
     except Exception as e: st.error(f"설정 적용 오류: {e}")
 
 def _parse_choices(text, cast="int"):
@@ -220,22 +212,37 @@ def calculate_indicators(close_data, rsi_period):
     rsi = 100 - (100 / (1 + rs))
     return rsi.to_numpy()
 
+# ✅ [복구 완료] 상세 프롬프트 버전
 def ask_gemini_analysis(summary, params, ticker, api_key, model_name):
-    if not api_key: return "⚠️ API Key가 없습니다."
+    if not api_key: return "⚠️ API Key를 입력해주세요."
     try:
         genai.configure(api_key=api_key)
-        m_name = model_name if model_name and model_name.strip() else "gemini-1.5-flash"
+        m_name = model_name if model_name else "gemini-1.5-flash"
         model = genai.GenerativeModel(m_name)
+        
         prompt = f"""
-        전문 퀀트 투자자 관점에서 분석해주세요.
-        [전략: {ticker}] {params}
-        [결과] 수익률: {summary.get('수익률 (%)')}%, MDD: {summary.get('MDD (%)')}%, 승률: {summary.get('승률 (%)')}%
-        1. 리스크 분석
-        2. 실전 투자 적합성
-        3. 파라미터 개선 제안
+        당신은 월스트리트의 전문 퀀트 트레이더입니다. 아래 백테스트 결과를 한국어로 냉철하게 분석해주세요.
+        
+        [대상 자산]: {ticker}
+        [전략 파라미터]: {params}
+        
+        [백테스트 성과]
+        - 수익률: {summary.get('수익률 (%)')}%
+        - MDD (최대 낙폭): {summary.get('MDD (%)')}%
+        - 승률: {summary.get('승률 (%)')}%
+        - 총 매매 횟수: {summary.get('총 매매 횟수')}회
+        - Profit Factor: {summary.get('Profit Factor')}
+        
+        [분석 요청 사항]
+        1. 🛡️ **리스크 평가**: 이 전략이 폭락장에서도 버틸 수 있는지, MDD가 적절한지 평가하세요.
+        2. 💰 **수익성 평가**: 단순 보유(Buy&Hold) 대비 매매 비용을 고려했을 때 유효한지 평가하세요.
+        3. 💡 **개선 아이디어**: 파라미터(이평선, 손절 등)를 어떻게 수정하면 더 나을지 구체적으로 제안하세요.
+        4. ⚖️ **종합 의견**: 실전 투자에 바로 사용해도 될까요? (강력 추천 / 보류 / 비추천)
         """
-        with st.spinner("🤖 분석 중..."): return model.generate_content(prompt).text
-    except Exception as e: return f"❌ 오류: {e}"
+        with st.spinner("🤖 Gemini가 전략을 분석 중입니다..."):
+            response = model.generate_content(prompt)
+            return response.text
+    except Exception as e: return f"❌ Gemini 분석 오류: {e}"
 
 def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offset_cl_buy, offset_cl_sell, ma_compare_short, ma_compare_long, offset_compare_short, offset_compare_long, buy_operator, sell_operator, use_trend_in_buy, use_trend_in_sell):
     if df.empty: st.warning("데이터 없음"); return
@@ -338,7 +345,10 @@ def backtest_fast(base, x_sig, x_trd, ma_dict_sig, ma_buy, offset_ma_buy, ma_sel
     if use_rsi_filter:
         rsi_arr = calculate_indicators(x_sig, rsi_period)
     
-    idx0 = max((ma_buy or 1), (ma_sell or 1), offset_ma_buy, offset_ma_sell, offset_cl_buy, offset_cl_sell, (offset_compare_short or 0), (offset_compare_long or 0), (rsi_period if use_rsi_filter else 0)) + 1
+    # [수정된 부분] max() 안에 있는 값들이 float일 수 있으므로 int()로 강제 형변환 (TypeError 해결)
+    max_offset = max((ma_buy or 1), (ma_sell or 1), offset_ma_buy, offset_ma_sell, offset_cl_buy, offset_cl_sell, (offset_compare_short or 0), (offset_compare_long or 0), (rsi_period if use_rsi_filter else 0))
+    idx0 = int(max_offset) + 1
+
     xO, xH, xL, xC_trd = base["Open_trd"].values, base["High_trd"].values, base["Low_trd"].values, x_trd
     cash, position, hold_days = float(initial_cash), 0.0, 0
     entry_price = 0.0 
@@ -576,7 +586,6 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
-    # [핵심] on_change를 사용하여 프리셋 변경 시 강제 업데이트
     selected_preset = st.selectbox(
         "🎯 프리셋", 
         ["직접 설정"] + list(PRESETS.keys()), 
@@ -692,7 +701,6 @@ with tab3:
                 benchmark = (df_log['종가'] / initial_price) * 5000000
                 drawdown = (df_log['자산'] - df_log['자산'].cummax()) / df_log['자산'].cummax() * 100
 
-                # 3단 차트
                 fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.25, 0.25], 
                                     subplot_titles=("자산 & Benchmark", "RSI (14)", "MDD (%)"))
 
@@ -720,7 +728,6 @@ with tab3:
                 fig.update_layout(height=800, template="plotly_dark", hovermode="x unified")
                 st.plotly_chart(fig, use_container_width=True)
 
-                # 월별 수익률 히트맵
                 st.markdown("### 📅 월별 수익률")
                 df_log['Year'] = df_log['날짜'].dt.year
                 df_log['Month'] = df_log['날짜'].dt.month
@@ -744,7 +751,6 @@ with tab3:
                 if "ai_analysis" in st.session_state: st.markdown(st.session_state["ai_analysis"])
                 with st.expander("로그"): st.dataframe(df_log)
 
-# ✅ [Tab 4: 실험실 - 최적화 기능 복구]
 with tab4:
     st.markdown("### 🧬 전략 파라미터 자동 최적화")
     
