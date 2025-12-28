@@ -15,7 +15,7 @@ import os
 # ==========================================
 # 1. 초기 설정 및 헬퍼 함수
 # ==========================================
-st.set_page_config(page_title="시그널 대시보드 Ultimate (Visual Fix)", page_icon="🧪", layout="wide")
+st.set_page_config(page_title="Quant Lab Ultimate (Real Final)", page_icon="🧪", layout="wide")
 
 STRATEGY_FILE = "my_strategies.json"
 
@@ -51,14 +51,14 @@ def _init_default_state():
         "ma_compare_short": 20, "ma_compare_long": 60,
         "offset_compare_short": 0, "offset_compare_long": 0,
         "stop_loss_pct": 10.0, "take_profit_pct": 0.0, 
-        "trailing_stop_pct": 0.0, # [수정] 기본값 0
+        "trailing_stop_pct": 0.0, 
         "min_hold_days": 0,
         "fee_bps": 25, "slip_bps": 1,
         "preset_name": "직접 설정",
         "gemini_api_key": "",
         "auto_run_trigger": False,
         "use_rsi_filter": False, "rsi_period": 14, "rsi_min": 30, "rsi_max": 70,
-        "use_market_filter": False, "market_ticker": "SPY", "market_ma_period": 200 # [수정] 시장 이평 기간 추가
+        "use_market_filter": False, "market_ticker": "SPY", "market_ma_period": 200
     }
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
@@ -73,7 +73,7 @@ def _on_preset_change():
         key_name = k
         if k == "signal_ticker": key_name = "signal_ticker_input"
         elif k == "trade_ticker": key_name = "trade_ticker_input"
-        elif k == "market_ma": key_name = "market_ma_period" # 호환성 유지
+        elif k == "market_ma": key_name = "market_ma_period"
         
         if key_name in st.session_state:
             st.session_state[key_name] = v
@@ -85,9 +85,10 @@ def apply_opt_params(row):
             "offset_cl_buy": int(row.get("offset_cl_buy", 0)), "buy_operator": str(row.get("buy_operator", ">")),
             "ma_sell": int(row.get("ma_sell", 10)), "offset_ma_sell": int(row.get("offset_ma_sell", 0)),
             "offset_cl_sell": int(row.get("offset_cl_sell", 0)), "sell_operator": str(row.get("sell_operator", "<")),
-            "use_trend_in_buy": bool(row.get("use_trend_in_buy", False)), 
-            "stop_loss_pct": float(row.get("stop_loss_pct", 0)),
-            "take_profit_pct": float(row.get("take_profit_pct", 0)),
+            "use_trend_in_buy": bool(row.get("use_trend_in_buy", False)), "use_trend_in_sell": bool(row.get("use_trend_in_sell", False)),
+            "ma_compare_short": int(row.get("ma_compare_short", 0)), "ma_compare_long": int(row.get("ma_compare_long", 0)),
+            "offset_compare_short": int(row.get("offset_compare_short", 0)), "offset_compare_long": int(row.get("offset_compare_long", 0)),
+            "stop_loss_pct": float(row.get("stop_loss_pct", 0)), "take_profit_pct": float(row.get("take_profit_pct", 0)),
             "trailing_stop_pct": float(row.get("trailing_stop_pct", 0)),
             "auto_run_trigger": True
         }
@@ -175,7 +176,6 @@ def prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool, mar
     if market_ticker:
         mkt = get_market_data(market_ticker, start_date, end_date)
         if not mkt.empty:
-            # [수정] 시장 이평선 기간 동적 적용
             mkt["Market_MA"] = mkt["Market_Close"].rolling(window=int(market_ma_period)).mean()
             mkt["Market_Bull"] = mkt["Market_Close"] > mkt["Market_MA"]
             sig = pd.merge(sig, mkt[["Date", "Market_Bull"]], on="Date", how="left")
@@ -392,7 +392,8 @@ def backtest_fast(base, x_sig, x_trd, ma_dict_sig, ma_buy, offset_ma_buy, ma_sel
         asset_curve.append(total)
         logs.append({
             "날짜": base["Date"].iloc[i], "종가": close_today, "신호": signal, "체결가": exec_price,
-            "자산": total, "이유": reason, "최고가": highest_price_since_entry if position > 0 else None
+            "자산": total, "이유": reason, 
+            "최고가": highest_price_since_entry if position > 0 else None
         })
 
     if not logs: return {}
@@ -426,7 +427,7 @@ def backtest_fast(base, x_sig, x_trd, ma_dict_sig, ma_buy, offset_ma_buy, ma_sel
 
 def auto_search_train_test(signal_ticker, trade_ticker, start_date, end_date, split_ratio, choices_dict, n_trials=50, initial_cash=5000000, fee_bps=0, slip_bps=0, strategy_behavior="1", min_hold_days=0, constraints=None, **kwargs):
     ma_pool = set([5, 10, 20, 60, 120])
-    for k in ["ma_buy", "ma_sell"]:
+    for k in ["ma_buy", "ma_sell", "ma_compare_short", "ma_compare_long"]:
         for v in choices_dict.get(k, []):
             try: 
                 if int(v) > 0: ma_pool.add(int(v))
@@ -440,8 +441,13 @@ def auto_search_train_test(signal_ticker, trade_ticker, start_date, end_date, sp
     x_sig_tr, x_sig_te = x_sig_full[:split_idx], x_sig_full[split_idx:]
     x_trd_tr, x_trd_te = x_trd_full[:split_idx], x_trd_full[split_idx:]
     
+    # 마스크 분할
+    mask_tr = mkt_mask[:split_idx] if mkt_mask is not None else None
+    mask_te = mkt_mask[split_idx:] if mkt_mask is not None else None
+    
     results = []
-    defaults = {"ma_buy": 10, "ma_sell": 5}
+    defaults = {"ma_buy": 50, "ma_sell": 10, "offset_ma_buy": 0, "offset_ma_sell": 0, "offset_cl_buy":0, "offset_cl_sell":0, "buy_operator":">", "sell_operator":"<"}
+    
     constraints = constraints or {}
 
     for _ in range(int(n_trials)):
@@ -452,14 +458,16 @@ def auto_search_train_test(signal_ticker, trade_ticker, start_date, end_date, sp
         
         common_args = {
             "ma_dict_sig": ma_dict,
-            "ma_buy": int(p.get('ma_buy', 10)), "offset_ma_buy": int(p.get('offset_ma_buy', 0)),
-            "ma_sell": int(p.get('ma_sell', 5)), "offset_ma_sell": int(p.get('offset_ma_sell', 0)),
+            "ma_buy": int(p.get('ma_buy', 50)), "offset_ma_buy": int(p.get('offset_ma_buy', 0)),
+            "ma_sell": int(p.get('ma_sell', 10)), "offset_ma_sell": int(p.get('offset_ma_sell', 0)),
             "offset_cl_buy": int(p.get('offset_cl_buy', 0)), "offset_cl_sell": int(p.get('offset_cl_sell', 0)),
-            "ma_compare_short": 0, "ma_compare_long": 0, "offset_compare_short": 0, "offset_compare_long": 0,
+            "ma_compare_short": int(p.get('ma_compare_short')) if p.get('ma_compare_short') else 0,
+            "ma_compare_long": int(p.get('ma_compare_long')) if p.get('ma_compare_long') else 0,
+            "offset_compare_short": int(p.get('offset_compare_short', 0)), "offset_compare_long": int(p.get('offset_compare_long', 0)),
             "initial_cash": initial_cash, 
             "stop_loss_pct": float(p.get('stop_loss_pct', 0)), 
             "take_profit_pct": float(p.get('take_profit_pct', 0)),
-            "trailing_stop_pct": float(p.get('trailing_stop_pct', 0)),
+            "trailing_stop_pct": float(p.get('trailing_stop_pct', 0)), 
             "strategy_behavior": strategy_behavior, "min_hold_days": min_hold_days, "fee_bps": fee_bps, "slip_bps": slip_bps,
             "use_trend_in_buy": p.get('use_trend_in_buy', True), "use_trend_in_sell": p.get('use_trend_in_sell', False),
             "buy_operator": p.get('buy_operator', '>'), "sell_operator": p.get('sell_operator', '<'),
@@ -479,7 +487,8 @@ def auto_search_train_test(signal_ticker, trade_ticker, start_date, end_date, sp
         row = {
             "Full_수익률(%)": res_full.get('수익률 (%)'), "Full_MDD(%)": res_full.get('MDD (%)'), "Full_승률(%)": res_full.get('승률 (%)'),
             "Test_수익률(%)": res_te.get('수익률 (%)'), "Train_수익률(%)": res_tr.get('수익률 (%)'),
-            "ma_buy": p.get('ma_buy'), "ma_sell": p.get('ma_sell'), "stop_loss_pct": p.get('stop_loss_pct'), "trailing_stop_pct": p.get('trailing_stop_pct')
+            "ma_buy": p.get('ma_buy'), "ma_sell": p.get('ma_sell'), "stop_loss_pct": p.get('stop_loss_pct'), "trailing_stop_pct": p.get('trailing_stop_pct'),
+            "ma_compare_short": p.get('ma_compare_short'), "ma_compare_long": p.get('ma_compare_long')
         }
         results.append(row)
         
@@ -491,8 +500,15 @@ def auto_search_train_test(signal_ticker, trade_ticker, start_date, end_date, sp
 _init_default_state()
 
 PRESETS = {
+    "SOXL 도전 전략": {"signal_ticker": "SOXL", "trade_ticker": "SOXL", "offset_cl_buy": 1, "buy_operator": ">", "offset_ma_buy": 1, "ma_buy": 20, "offset_cl_sell": 1, "sell_operator": ">", "offset_ma_sell": 20, "ma_sell": 10, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 10, "ma_compare_short": 5, "offset_compare_long": 20, "ma_compare_long": 5, "stop_loss_pct": 0.0, "take_profit_pct": 0.0},
+    "SOXL 안전 전략": {"signal_ticker": "SOXL", "trade_ticker": "SOXL", "offset_cl_buy": 20, "buy_operator": ">", "offset_ma_buy": 50, "ma_buy": 10, "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 10, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 20, "ma_compare_short": 10, "offset_compare_long": 20, "ma_compare_long": 1, "stop_loss_pct": 35.0, "take_profit_pct": 15.0},
+    "TSLL 안전 전략": {"signal_ticker": "TSLL", "trade_ticker": "TSLL", "offset_cl_buy": 20, "buy_operator": "<", "offset_ma_buy": 5, "ma_buy": 10, "offset_cl_sell": 1, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 60, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 20, "ma_compare_short": 50, "offset_compare_long": 20, "ma_compare_long": 5, "stop_loss_pct": 0.0, "take_profit_pct": 20.0},
+    "GGLL 전략": {"signal_ticker": "GGLL", "trade_ticker": "GGLL", "offset_cl_buy": 1, "buy_operator": "<", "offset_ma_buy": 1, "ma_buy": 20, "offset_cl_sell": 20, "sell_operator": "<", "offset_ma_sell": 20, "ma_sell": 50, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 20, "ma_compare_short": 1, "offset_compare_long": 50, "ma_compare_long": 1, "stop_loss_pct": 15.0, "take_profit_pct": 0.0},
+    "GGLL 안전 전략": {"signal_ticker": "GGLL", "trade_ticker": "GGLL", "offset_cl_buy": 10, "buy_operator": ">", "offset_ma_buy": 50, "ma_buy": 5, "offset_cl_sell": 10, "sell_operator": "<", "offset_ma_sell": 20, "ma_sell": 20, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 10, "ma_compare_short": 20, "offset_compare_long": 50, "ma_compare_long": 10, "stop_loss_pct": 20.0, "take_profit_pct": 20.0},
+    "BITX 전략": {"signal_ticker": "BITX", "trade_ticker": "BITX", "offset_cl_buy": 16, "buy_operator": ">", "offset_ma_buy": 26, "ma_buy": 5, "offset_cl_sell": 26, "sell_operator": ">", "offset_ma_sell": 2, "ma_sell": 15, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 26, "ma_compare_short": 15, "offset_compare_long": 6, "ma_compare_long": 15, "stop_loss_pct": 30.0, "take_profit_pct": 0.0},
+    "TQQQ 도전 전략": {"signal_ticker": "TQQQ", "trade_ticker": "TQQQ", "offset_cl_buy": 50, "buy_operator": ">", "offset_ma_buy": 10, "ma_buy": 1, "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 1, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 1, "ma_compare_short": 50, "offset_compare_long": 10, "ma_compare_long": 1, "stop_loss_pct": 15.0, "take_profit_pct": 25.0},
+    "TQQQ 안전 전략": {"signal_ticker": "TQQQ", "trade_ticker": "TQQQ", "offset_cl_buy": 10, "buy_operator": "<", "offset_ma_buy": 50, "ma_buy": 20, "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 10, "ma_sell": 20, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 10, "ma_compare_short": 50, "offset_compare_long": 20, "ma_compare_long": 20, "stop_loss_pct": 25.0, "take_profit_pct": 25.0},
     "TSLL 트레일링 전략": {"signal_ticker": "TSLL", "trade_ticker": "TSLL", "ma_buy": 10, "ma_sell": 5, "stop_loss_pct": 10.0, "trailing_stop_pct": 15.0, "use_trend_in_buy": True, "use_market_filter": False},
-    "TSLL 안전 (시장필터)": {"signal_ticker": "TSLL", "trade_ticker": "TSLL", "ma_buy": 20, "ma_sell": 10, "stop_loss_pct": 10.0, "trailing_stop_pct": 10.0, "use_market_filter": True, "market_ticker": "QQQ", "market_ma_period": 120},
 }
 PRESETS.update(load_saved_strategies())
 st.session_state["ALL_PRESETS_DATA"] = PRESETS
@@ -532,38 +548,61 @@ col3, col4 = st.columns(2)
 start_date = col3.date_input("시작일", value=datetime.date(2022, 9, 1))
 end_date = col4.date_input("종료일", value=datetime.date.today())
 
-with st.expander("🛡️ 리스크 관리", expanded=True):
+with st.expander("🛡️ 리스크 관리 (New)", expanded=True):
     r1, r2, r3 = st.columns(3)
-    stop_loss_pct = r1.number_input("손절 (%)", step=1.0, key="stop_loss_pct", help="매수가 대비 하락 시 손절")
-    take_profit_pct = r2.number_input("고정 익절 (%)", step=1.0, key="take_profit_pct", help="0이면 미사용")
-    trailing_stop_pct = r3.number_input("트레일링 스탑 (%)", step=1.0, key="trailing_stop_pct", help="고점 대비 하락 시 익절")
+    stop_loss_pct = r1.number_input("손절 (%)", step=1.0, key="stop_loss_pct")
+    take_profit_pct = r2.number_input("고정 익절 (%)", step=1.0, key="take_profit_pct")
+    trailing_stop_pct = r3.number_input("트레일링 스탑 (%)", value=0.0, step=1.0, key="trailing_stop_pct")
     st.markdown("---")
     c_m1, c_m2, c_m3 = st.columns([1, 1, 1])
-    use_mkt = c_m1.checkbox("✅ 시장 필터 사용", key="use_market_filter", help="시장이 상승세일 때만 매수")
+    use_mkt = c_m1.checkbox("✅ 시장 필터 사용", key="use_market_filter")
     mkt_ticker = c_m2.text_input("시장 지수 티커", value="SPY", key="market_ticker", disabled=not use_mkt)
     mkt_ma = c_m3.number_input("시장 이평선 (일)", value=200, step=10, key="market_ma_period", disabled=not use_mkt)
 
-with st.expander("📈 상세 설정", expanded=False):
+with st.expander("📈 상세 설정 (Offset, 비용 등)", expanded=True):
     c1, c2 = st.columns(2)
-    ma_buy = c1.number_input("매수 이평", key="ma_buy", step=1, min_value=1)
-    ma_sell = c2.number_input("매도 이평", key="ma_sell", step=1, min_value=1)
-    # 나머지 파라미터는 session_state 기본값 사용 (생략)
-    offset_ma_buy = st.session_state["offset_ma_buy"]
-    offset_cl_buy = st.session_state["offset_cl_buy"]
-    buy_operator = st.session_state["buy_operator"]
-    use_trend_in_buy = st.session_state["use_trend_in_buy"]
-    offset_ma_sell = st.session_state["offset_ma_sell"]
-    offset_cl_sell = st.session_state["offset_cl_sell"]
-    sell_operator = st.session_state["sell_operator"]
-    use_trend_in_sell = st.session_state["use_trend_in_sell"]
-    ma_compare_short = st.session_state["ma_compare_short"]
-    ma_compare_long = st.session_state["ma_compare_long"]
-    offset_compare_short = st.session_state["offset_compare_short"]
-    offset_compare_long = st.session_state["offset_compare_long"]
-    strategy_behavior = st.session_state["strategy_behavior"]
-    min_hold_days = st.session_state["min_hold_days"]
-    fee_bps = st.session_state["fee_bps"]
-    slip_bps = st.session_state["slip_bps"]
+    with c1:
+        st.markdown("#### 📥 매수")
+        ma_buy = st.number_input("매수 이평", key="ma_buy", step=1, min_value=1)
+        offset_ma_buy = st.number_input("매수 이평 Offset", key="offset_ma_buy", step=1)
+        offset_cl_buy = st.number_input("매수 종가 Offset", key="offset_cl_buy", step=1)
+        buy_operator = st.selectbox("매수 부호", [">", "<"], key="buy_operator")
+        use_trend_in_buy = st.checkbox("매수 추세 필터", key="use_trend_in_buy")
+    with c2:
+        st.markdown("#### 📤 매도")
+        ma_sell = st.number_input("매도 이평", key="ma_sell", step=1, min_value=1)
+        offset_ma_sell = st.number_input("매도 이평 Offset", key="offset_ma_sell", step=1)
+        offset_cl_sell = st.number_input("매도 종가 Offset", key="offset_cl_sell", step=1)
+        sell_operator = st.selectbox("매도 부호", ["<", ">"], key="sell_operator")
+        use_trend_in_sell = st.checkbox("매도 역추세 필터", key="use_trend_in_sell")
+    
+    st.divider()
+    c3, c4 = st.columns(2)
+    with c3:
+        st.markdown("#### 📈 추세선")
+        ma_compare_short = st.number_input("추세 Short", key="ma_compare_short", step=1)
+        offset_compare_short = st.number_input("추세 Short Offset", key="offset_compare_short", step=1)
+    with c4:
+        st.markdown("#### .")
+        ma_compare_long = st.number_input("추세 Long", key="ma_compare_long", step=1)
+        offset_compare_long = st.number_input("추세 Long Offset", key="offset_compare_long", step=1)
+
+    st.divider()
+    c5, c6 = st.columns(2)
+    with c5:
+        st.markdown("#### ⚙️ 기타")
+        strategy_behavior = st.selectbox("행동 패턴", ["1. 포지션 없으면 매수 / 보유 중이면 매도", "2. 매수 우선", "3. 관망"], key="strategy_behavior")
+        min_hold_days = st.number_input("최소 보유일", step=1, key="min_hold_days")
+    with c6:
+        st.markdown("#### .")
+        fee_bps = st.number_input("수수료 (bps)", value=25, step=1, key="fee_bps")
+        slip_bps = st.number_input("슬리피지 (bps)", value=1, step=1, key="slip_bps")
+        
+    st.divider()
+    c_r1, c_r2 = st.columns(2)
+    rsi_p = c_r1.number_input("RSI 기간", 14, step=1, key="rsi_period")
+    u_rsi = st.checkbox("RSI 필터 적용", key="use_rsi_filter")
+    if u_rsi: rsi_max = c_r2.number_input("RSI 과매수 기준", 70, key="rsi_max")
 
 tab1, tab2, tab3, tab4 = st.tabs(["🎯 시그널", "📚 PRESETS", "🧪 백테스트", "🧬 실험실"])
 
@@ -572,11 +611,24 @@ with tab1:
         mkt_t = mkt_ticker if use_mkt else None
         check_signal_today(get_data(signal_ticker, start_date, end_date), ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offset_cl_buy, offset_cl_sell, ma_compare_short, ma_compare_long, offset_compare_short, offset_compare_long, buy_operator, sell_operator, use_trend_in_buy, use_trend_in_sell, mkt_t, mkt_ma)
 
+with tab2:
+    if st.button("📚 일괄 확인"):
+        rows = []
+        with st.spinner("계산 중..."):
+            for name, p in PRESETS.items():
+                t = p.get("signal_ticker", p.get("trade_ticker"))
+                res = summarize_signal_today(get_data(t, start_date, end_date), p)
+                rows.append({"전략": name, "티커": t, "시그널": res["label"], "최근 BUY": res["last_buy"], "최근 SELL": res["last_sell"], "최근 HOLD": res["last_hold"]})
+        st.dataframe(pd.DataFrame(rows))
+
 with tab3:
-    if st.button("✅ 백테스트 실행", use_container_width=True):
-        p_ma_buy = int(ma_buy)
-        p_ma_sell = int(ma_sell)
-        ma_pool = [p_ma_buy, p_ma_sell]
+    should_run = False
+    if st.button("✅ 백테스트 실행", use_container_width=True): should_run = True
+    if st.session_state.get("auto_run_trigger"): should_run = True; st.session_state["auto_run_trigger"] = False 
+
+    if should_run:
+        p_ma_buy, p_ma_sell = int(ma_buy), int(ma_sell)
+        ma_pool = [p_ma_buy, p_ma_sell, int(ma_compare_short), int(ma_compare_long)]
         mkt_t = mkt_ticker if use_mkt else None
         
         base, x_sig, x_trd, ma_dict, mkt_mask = prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool, market_ticker=mkt_t, market_ma_period=mkt_ma)
@@ -611,7 +663,7 @@ with tab3:
                 fig.add_trace(go.Scatter(x=df_log['날짜'], y=df_log['자산'], name='내 전략', line=dict(color='#00F0FF', width=2)), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_log['날짜'], y=benchmark, name='단순 보유', line=dict(color='gray', dash='dot')), row=1, col=1)
                 
-                # [수정] 마커 구분
+                # 마커 시각화 (개선됨)
                 buys = df_log[df_log['신호'] == 'BUY']
                 sells_strat = df_log[(df_log['신호'] == 'SELL') & (df_log['이유'] == '전략매도')]
                 sells_stop = df_log[(df_log['신호'] == 'SELL') & (df_log['이유'] == '손절')]
@@ -620,7 +672,7 @@ with tab3:
                 fig.add_trace(go.Scatter(x=buys['날짜'], y=buys['체결가'], mode='markers', marker=dict(symbol='triangle-up', color='green', size=10), name='매수'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=sells_strat['날짜'], y=sells_strat['체결가'], mode='markers', marker=dict(symbol='triangle-down', color='blue', size=10), name='전략매도'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=sells_stop['날짜'], y=sells_stop['체결가'], mode='markers', marker=dict(symbol='x', color='red', size=12), name='손절'), row=1, col=1)
-                fig.add_trace(go.Scatter(x=sells_profit['날짜'], y=sells_profit['체결가'], mode='markers', marker=dict(symbol='star', color='gold', size=12), name='익절'), row=1, col=1)
+                fig.add_trace(go.Scatter(x=sells_profit['날짜'], y=sells_profit['체결가'], mode='markers', marker=dict(symbol='star', color='gold', size=12), name='익절/트레일링'), row=1, col=1)
 
                 if 'RSI' in df_log.columns:
                     fig.add_trace(go.Scatter(x=df_log['날짜'], y=df_log['RSI'], name='RSI', line=dict(color='orange')), row=2, col=1)
