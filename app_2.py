@@ -15,7 +15,7 @@ import os
 # ==========================================
 # 1. 초기 설정 및 헬퍼 함수
 # ==========================================
-st.set_page_config(page_title="시그널 대시보드 Ultimate (Final)", page_icon="📈", layout="wide")
+st.set_page_config(page_title="시그널 대시보드 Ultimate (Auto-Fix)", page_icon="📈", layout="wide")
 
 STRATEGY_FILE = "my_strategies.json"
 
@@ -77,6 +77,26 @@ def _on_preset_change():
         if key_name in st.session_state:
             st.session_state[key_name] = v
 
+def apply_opt_params(row):
+    try:
+        updates = {
+            "ma_buy": int(row["ma_buy"]), "offset_ma_buy": int(row["offset_ma_buy"]),
+            "offset_cl_buy": int(row["offset_cl_buy"]), "buy_operator": str(row["buy_operator"]),
+            "ma_sell": int(row["ma_sell"]), "offset_ma_sell": int(row["offset_ma_sell"]),
+            "offset_cl_sell": int(row["offset_cl_sell"]), "sell_operator": str(row["sell_operator"]),
+            "use_trend_in_buy": bool(row["use_trend_in_buy"]), "use_trend_in_sell": bool(row["use_trend_in_sell"]),
+            "ma_compare_short": int(row["ma_compare_short"]) if not pd.isna(row["ma_compare_short"]) else 20,
+            "ma_compare_long": int(row["ma_compare_long"]) if not pd.isna(row["ma_compare_long"]) else 50,
+            "offset_compare_short": int(row["offset_compare_short"]),
+            "offset_compare_long": int(row["offset_compare_long"]),
+            "stop_loss_pct": float(row["stop_loss_pct"]),
+            "take_profit_pct": float(row["take_profit_pct"]),
+            "auto_run_trigger": True
+        }
+        for k, v in updates.items(): st.session_state[k] = v
+        st.session_state["preset_name_selector"] = "직접 설정"
+    except Exception as e: st.error(f"설정 적용 오류: {e}")
+
 def _parse_choices(text, cast="int"):
     if text is None: return []
     tokens = [t for t in re.split(r"[,\s]+", str(text).strip()) if t != ""]
@@ -114,28 +134,8 @@ def _fast_ma(x: np.ndarray, w: int) -> np.ndarray:
         y[w-1:] = conv
     return y
 
-def apply_opt_params(row):
-    try:
-        updates = {
-            "ma_buy": int(row["ma_buy"]), "offset_ma_buy": int(row["offset_ma_buy"]),
-            "offset_cl_buy": int(row["offset_cl_buy"]), "buy_operator": str(row["buy_operator"]),
-            "ma_sell": int(row["ma_sell"]), "offset_ma_sell": int(row["offset_ma_sell"]),
-            "offset_cl_sell": int(row["offset_cl_sell"]), "sell_operator": str(row["sell_operator"]),
-            "use_trend_in_buy": bool(row["use_trend_in_buy"]), "use_trend_in_sell": bool(row["use_trend_in_sell"]),
-            "ma_compare_short": int(row["ma_compare_short"]) if not pd.isna(row["ma_compare_short"]) else 20,
-            "ma_compare_long": int(row["ma_compare_long"]) if not pd.isna(row["ma_compare_long"]) else 50,
-            "offset_compare_short": int(row["offset_compare_short"]),
-            "offset_compare_long": int(row["offset_compare_long"]),
-            "stop_loss_pct": float(row["stop_loss_pct"]),
-            "take_profit_pct": float(row["take_profit_pct"]),
-            "auto_run_trigger": True
-        }
-        for k, v in updates.items(): st.session_state[k] = v
-        st.session_state["preset_name_selector"] = "직접 설정"
-    except Exception as e: st.error(f"설정 적용 오류: {e}")
-
 # ==========================================
-# 2. 데이터 로딩
+# 2. 데이터 로딩 (핵심 수정: 자동 기간 조정)
 # ==========================================
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_data(ticker: str, start_date, end_date) -> pd.DataFrame:
@@ -150,7 +150,16 @@ def get_data(ticker: str, start_date, end_date) -> pd.DataFrame:
             if not df.empty:
                 df = df.reset_index().rename(columns={"날짜":"Date","시가":"Open","고가":"High","저가":"Low","종가":"Close"})
         else:
+            # [핵심] 1차 시도: 사용자가 지정한 날짜로 다운로드
             df = yf.download(t, start=start_date, end=end_date, progress=False, auto_adjust=False)
+            
+            # [핵심] 2차 시도: 데이터가 없으면(상장일 문제 등) 전체 기간(Max)으로 재시도
+            if df.empty:
+                df = yf.download(t, period="max", progress=False, auto_adjust=False)
+                # Max로 가져온 뒤, End Date 이후 데이터는 자름 (Start는 자동 보정됨)
+                if not df.empty:
+                    df = df[df.index <= pd.Timestamp(end_date)]
+
             if isinstance(df.columns, pd.MultiIndex):
                 try: 
                     if t in df.columns.levels[1]: df = df.xs(t, axis=1, level=1)
@@ -231,7 +240,7 @@ def ask_gemini_analysis(summary, params, ticker, api_key, model_name):
     except Exception as e: return f"❌ Gemini 분석 오류: {e}"
 
 def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offset_cl_buy, offset_cl_sell, ma_compare_short, ma_compare_long, offset_compare_short, offset_compare_long, buy_operator, sell_operator, use_trend_in_buy, use_trend_in_sell):
-    if df.empty: st.warning("데이터 없음"); return
+    if df.empty: st.warning("데이터 없음 (시작일이나 티커를 확인하세요)"); return
     
     ma_buy, ma_sell = int(ma_buy), int(ma_sell)
     offset_ma_buy, offset_ma_sell = int(offset_ma_buy), int(offset_ma_sell)
@@ -247,6 +256,11 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offse
     
     i = len(df) - 1
     try:
+        # [수정] 데이터 길이가 Offset보다 짧을 경우 예외처리
+        if i - max(offset_cl_buy, offset_ma_buy, offset_cl_sell, offset_ma_sell) < 0:
+            st.error(f"데이터가 너무 부족합니다. (총 {len(df)}일)")
+            return
+
         cl_b, ma_b = float(df["Close"].iloc[i - offset_cl_buy]), float(df["MA_BUY"].iloc[i - offset_ma_buy])
         cl_s, ma_s = float(df["Close"].iloc[i - offset_cl_sell]), float(df["MA_SELL"].iloc[i - offset_ma_sell])
         ref_date = df["Date"].iloc[-1].strftime('%Y-%m-%d')
@@ -270,7 +284,7 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offse
         if buy_ok: st.success("📈 매수 시그널!")
         elif sell_ok: st.error("📉 매도 시그널!")
         else: st.info("⏸ 관망")
-    except: st.error("데이터 부족")
+    except Exception as e: st.error(f"계산 오류 (이평선 기간이 데이터보다 깁니다): {e}")
 
 def summarize_signal_today(df, p):
     if df is None or df.empty: return {"label": "N/A", "last_buy": "-", "last_sell": "-", "last_hold": "-"}
@@ -551,9 +565,16 @@ PRESETS = {
     "SOXL 안전 전략": {"signal_ticker": "SOXL", "trade_ticker": "SOXL", "offset_cl_buy": 20, "buy_operator": ">", "offset_ma_buy": 50, "ma_buy": 10, "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 10, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 20, "ma_compare_short": 10, "offset_compare_long": 20, "ma_compare_long": 1, "stop_loss_pct": 35.0, "take_profit_pct": 15.0},
     "TSLL 안전 전략": {"signal_ticker": "TSLL", "trade_ticker": "TSLL", "offset_cl_buy": 20, "buy_operator": "<", "offset_ma_buy": 5, "ma_buy": 10, "offset_cl_sell": 1, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 60, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 20, "ma_compare_short": 50, "offset_compare_long": 20, "ma_compare_long": 5, "stop_loss_pct": 0.0, "take_profit_pct": 20.0},
     "GGLL 전략": {"signal_ticker": "GGLL", "trade_ticker": "GGLL", "offset_cl_buy": 1, "buy_operator": "<", "offset_ma_buy": 1, "ma_buy": 20, "offset_cl_sell": 20, "sell_operator": "<", "offset_ma_sell": 20, "ma_sell": 50, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 20, "ma_compare_short": 1, "offset_compare_long": 50, "ma_compare_long": 1, "stop_loss_pct": 15.0, "take_profit_pct": 0.0},
+    "GGLL 안전 전략": {"signal_ticker": "GGLL", "trade_ticker": "GGLL", "offset_cl_buy": 10, "buy_operator": ">", "offset_ma_buy": 50, "ma_buy": 5, "offset_cl_sell": 10, "sell_operator": "<", "offset_ma_sell": 20, "ma_sell": 20, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 10, "ma_compare_short": 20, "offset_compare_long": 50, "ma_compare_long": 10, "stop_loss_pct": 20.0, "take_profit_pct": 20.0},
     "BITX 전략": {"signal_ticker": "BITX", "trade_ticker": "BITX", "offset_cl_buy": 16, "buy_operator": ">", "offset_ma_buy": 26, "ma_buy": 5, "offset_cl_sell": 26, "sell_operator": ">", "offset_ma_sell": 2, "ma_sell": 15, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 26, "ma_compare_short": 15, "offset_compare_long": 6, "ma_compare_long": 15, "stop_loss_pct": 30.0, "take_profit_pct": 0.0},
     "TQQQ 도전 전략": {"signal_ticker": "TQQQ", "trade_ticker": "TQQQ", "offset_cl_buy": 50, "buy_operator": ">", "offset_ma_buy": 10, "ma_buy": 1, "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 1, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 1, "ma_compare_short": 50, "offset_compare_long": 10, "ma_compare_long": 1, "stop_loss_pct": 15.0, "take_profit_pct": 25.0},
     "TQQQ 안전 전략": {"signal_ticker": "TQQQ", "trade_ticker": "TQQQ", "offset_cl_buy": 10, "buy_operator": "<", "offset_ma_buy": 50, "ma_buy": 20, "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 10, "ma_sell": 20, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 10, "ma_compare_short": 50, "offset_compare_long": 20, "ma_compare_long": 20, "stop_loss_pct": 25.0, "take_profit_pct": 25.0},
+    "BITX-TQQQ 안전": {"signal_ticker": "BITX", "trade_ticker": "TQQQ", "offset_cl_buy": 10, "buy_operator": ">", "offset_ma_buy": 10, "ma_buy": 20, "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 5, "use_trend_in_buy": False, "use_trend_in_sell": True, "offset_compare_short": 50, "ma_compare_short": 5, "offset_compare_long": 1, "ma_compare_long": 50, "stop_loss_pct": 0.0, "take_profit_pct": 15.0},
+    "453850 ACE 미국30년국채 전략": {"signal_ticker": "453850", "trade_ticker": "453850", "offset_cl_buy": 16, "buy_operator": "<", "offset_ma_buy": 26, "ma_buy": 15, "offset_cl_sell": 26, "sell_operator": ">", "offset_ma_sell": 2, "ma_sell": 20, "use_trend_in_buy": True, "use_trend_in_sell": False, "offset_compare_short": 2, "ma_compare_short": 15, "offset_compare_long": 26, "ma_compare_long": 15, "stop_loss_pct": 0.0, "take_profit_pct": 10.0},
+    "465580 ACE미국빅테크TOP7PLUS": {"signal_ticker": "465580", "trade_ticker": "465580", "offset_cl_buy": 2, "buy_operator": ">", "offset_ma_buy": 2, "ma_buy": 5, "offset_cl_sell": 2, "sell_operator": "<", "offset_ma_sell": 2, "ma_sell": 25, "use_trend_in_buy": False, "use_trend_in_sell": True, "offset_compare_short": 6, "ma_compare_short": 10, "offset_compare_long": 2, "ma_compare_long": 10, "stop_loss_pct": 0.0, "take_profit_pct": 10.0},
+    "390390 KODEX미국반도체": {"signal_ticker": "390390", "trade_ticker": "390390", "offset_cl_buy": 6, "buy_operator": "<", "offset_ma_buy": 2, "ma_buy": 5, "offset_cl_sell": 26, "sell_operator": ">", "offset_ma_sell": 2, "ma_sell": 20, "use_trend_in_buy": False, "use_trend_in_sell": True, "offset_compare_short": 6, "ma_compare_short": 25, "offset_compare_long": 2, "ma_compare_long": 25, "stop_loss_pct": 0.0, "take_profit_pct": 10.0},
+    "371460 TIGER차이나전기차SOLACTIVE": {"signal_ticker": "371460", "trade_ticker": "371460", "offset_cl_buy": 2, "buy_operator": ">", "offset_ma_buy": 6, "ma_buy": 10, "offset_cl_sell": 16, "sell_operator": ">", "offset_ma_sell": 2, "ma_sell": 5, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 6, "ma_compare_short": 15, "offset_compare_long": 16, "ma_compare_long": 10, "stop_loss_pct": 0.0, "take_profit_pct": 10.0},
+    "483280 AITOP10커브드콜": {"signal_ticker": "483280", "trade_ticker": "483280", "offset_cl_buy": 26, "buy_operator": ">", "offset_ma_buy": 26, "ma_buy": 20, "offset_cl_sell": 26, "sell_operator": ">", "offset_ma_sell": 6, "ma_sell": 20, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 2, "ma_compare_short": 20, "offset_compare_long": 16, "ma_compare_long": 5, "stop_loss_pct": 0.0, "take_profit_pct": 0.0},
 }
 PRESETS.update(load_saved_strategies())
 st.session_state["ALL_PRESETS_DATA"] = PRESETS
