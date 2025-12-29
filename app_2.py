@@ -727,16 +727,20 @@ with tab3:
 
 with tab4:
     st.markdown("### 🧬 전략 파라미터 자동 최적화")
+    
     with st.expander("🔎 필터 및 정렬 설정", expanded=True):
         c1, c2 = st.columns(2)
         sort_metric = c1.selectbox("정렬 기준", ["Full_수익률(%)", "Test_수익률(%)", "Full_MDD(%)", "Full_승률(%)"])
         top_n = c2.slider("표시할 상위 개수", 1, 50, 10)
+        
         c3, c4 = st.columns(2)
         min_trades = c3.number_input("최소 매매 횟수", 0, 100, 5)
         min_win = c4.number_input("최소 승률 (%)", 0.0, 100.0, 50.0)
+        
         c5, c6 = st.columns(2)
         min_train_ret = c5.number_input("최소 Train 수익률 (%)", -100.0, 1000.0, 0.0)
         min_test_ret = c6.number_input("최소 Test 수익률 (%)", -100.0, 1000.0, 0.0)
+        
         limit_mdd = st.number_input("최대 낙폭(MDD) 제한 (%) (0=미사용)", 0.0, 100.0, 0.0)
 
     colL, colR = st.columns(2)
@@ -746,6 +750,7 @@ with tab4:
         cand_buy_op = st.text_input("매수 부호", "<,>")
         cand_off_ma_buy = st.text_input("매수 이평 Offset", "1, 5, 10, 20, 50")
         cand_ma_buy = st.text_input("매수 이평 (MA Buy)", "1, 5, 10, 20, 50, 60, 120")
+        
         st.divider()
         cand_off_cl_sell = st.text_input("매도 종가 Offset", "1, 5, 10, 20, 50")
         cand_sell_op = st.text_input("매도 부호", "<,>")
@@ -756,46 +761,83 @@ with tab4:
         st.markdown("#### 2. 추세 & 리스크")
         cand_use_tr_buy = st.text_input("매수 추세필터 (True, False)", "True, False")
         cand_use_tr_sell = st.text_input("매도 역추세필터", "True")
+        
         cand_ma_s = st.text_input("추세 Short 후보", "1, 5, 10, 20, 50, 60, 120")
         cand_ma_l = st.text_input("추세 Long 후보", "1, 5, 10, 20, 50, 60, 120")
+        cand_off_s = st.text_input("추세 Short Offset", "1, 5, 10, 20, 50")
+        cand_off_l = st.text_input("추세 Long Offset", "1, 5, 10, 20, 50")
+        
         st.divider()
-        cand_stop = st.text_input("손절(%) 후보", "0, 5, 10, 20")
-        cand_take = st.text_input("익절(%) 후보", "0, 10, 20")
-        cand_trail = st.text_input("트레일링(%) 후보", "0, 10, 15, 20")
+        cand_stop = st.text_input("손절(%) 후보", "0, 15, 25")
+        cand_take = st.text_input("익절(%) 후보", "0, 15, 25")
 
     n_trials = st.number_input("시도 횟수", 10, 500, 50)
     split_ratio = st.slider("Train 비율", 0.5, 0.9, 0.7)
     
     if st.button("🚀 최적 조합 찾기"):
-
+        # [수정완료] 모든 파라미터를 빠짐없이 포함시켰습니다.
         choices = {
-            "ma_buy": _parse_choices(cand_ma_buy, "int"), "offset_ma_buy": _parse_choices(cand_off_ma_buy, "int"),
-            "offset_cl_buy": _parse_choices(cand_off_cl_buy, "int"), "buy_operator": _parse_choices(cand_buy_op, "str"),
-            "ma_sell": _parse_choices(cand_ma_sell, "int"), "offset_ma_sell": _parse_choices(cand_off_ma_sell, "int"),
-            "offset_cl_sell": _parse_choices(cand_off_cl_sell, "int"), "sell_operator": _parse_choices(cand_sell_op, "str"),
-            "use_trend_in_buy": _parse_choices(cand_use_tr_buy, "bool"), "use_trend_in_sell": _parse_choices(cand_use_tr_sell, "bool"),
-            "ma_compare_short": _parse_choices(cand_ma_s, "int"), "ma_compare_long": _parse_choices(cand_ma_l, "int"),
-            "stop_loss_pct": _parse_choices(cand_stop, "float"), "take_profit_pct": _parse_choices(cand_take, "float"),
+            "ma_buy": _parse_choices(cand_ma_buy, "int"), 
+            "offset_ma_buy": _parse_choices(cand_off_ma_buy, "int"),
+            "offset_cl_buy": _parse_choices(cand_off_cl_buy, "int"), 
+            "buy_operator": _parse_choices(cand_buy_op, "str"),
+            "ma_sell": _parse_choices(cand_ma_sell, "int"), 
+            "offset_ma_sell": _parse_choices(cand_off_ma_sell, "int"),
+            "offset_cl_sell": _parse_choices(cand_off_cl_sell, "int"), 
+            "sell_operator": _parse_choices(cand_sell_op, "str"),
+            "use_trend_in_buy": _parse_choices(cand_use_tr_buy, "bool"), 
+            "use_trend_in_sell": _parse_choices(cand_use_tr_sell, "bool"),
+            "ma_compare_short": _parse_choices(cand_ma_s, "int"), 
+            "ma_compare_long": _parse_choices(cand_ma_l, "int"),
+            "offset_compare_short": _parse_choices(cand_off_s, "int"), 
+            "offset_compare_long": _parse_choices(cand_off_l, "int"),
+            "stop_loss_pct": _parse_choices(cand_stop, "float"), 
+            "take_profit_pct": _parse_choices(cand_take, "float"),
         }
-        constraints = {"min_trades": min_trades, "min_winrate": min_win, "limit_mdd": limit_mdd, "min_train_ret": min_train_ret, "min_test_ret": min_test_ret}
+        
+        constraints = {
+            "min_trades": min_trades,
+            "min_winrate": min_win,
+            "limit_mdd": limit_mdd,
+            "min_train_ret": min_train_ret,
+            "min_test_ret": min_test_ret
+        }
         
         with st.spinner("최적화 진행 중..."):
             df_opt = auto_search_train_test(
                 signal_ticker, trade_ticker, start_date, end_date, split_ratio, choices, 
                 n_trials=int(n_trials), initial_cash=5000000, 
-                fee_bps=fee_bps, slip_bps=slip_bps, strategy_behavior=strategy_behavior, min_hold_days=min_hold_days, 
-                constraints=constraints             
+                fee_bps=fee_bps, slip_bps=slip_bps, strategy_behavior=strategy_behavior, min_hold_days=min_hold_days,
+                constraints=constraints
             )
             
             if not df_opt.empty:
-                for col in df_opt.columns: df_opt[col] = pd.to_numeric(df_opt[col], errors='ignore')
-                st.session_state['opt_results'] = df_opt.round(2); st.session_state['sort_metric'] = sort_metric
-            else: st.warning("조건을 만족하는 결과가 없습니다.")
+                for col in df_opt.columns: 
+                    df_opt[col] = pd.to_numeric(df_opt[col], errors='ignore')
+                st.session_state['opt_results'] = df_opt.round(2)
+                st.session_state['sort_metric'] = sort_metric
+            else:
+                st.warning("조건을 만족하는 결과가 없습니다.")
 
     if 'opt_results' in st.session_state:
         df_show = st.session_state['opt_results'].sort_values(st.session_state['sort_metric'], ascending=False).head(top_n)
-        st.markdown("#### 🏆 상위 결과")
+        
+        st.markdown("#### 🏆 상위 결과 (적용 버튼을 누르면 즉시 백테스트 실행)")
+        
         for i, row in df_show.iterrows():
             c1, c2 = st.columns([4, 1])
-            with c1: st.dataframe(pd.DataFrame([row]), hide_index=True)
-            with c2: st.button(f"🥇 적용하기 #{i}", key=f"apply_{i}", on_click=apply_opt_params, args=(row,))
+            with c1:
+                st.dataframe(
+                    pd.DataFrame([row]), 
+                    hide_index=True,
+                    column_config={
+                        "Full_수익률(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Test_수익률(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Train_수익률(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Full_MDD(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Full_승률(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                    }
+                )
+            with c2:
+                # [중요] row에 모든 파라미터가 들어있으므로 apply_opt_params가 정상 작동함
+                st.button(f"🥇 적용하기 #{i}", key=f"apply_{i}", on_click=apply_opt_params, args=(row,))
