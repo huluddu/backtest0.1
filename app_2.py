@@ -767,9 +767,7 @@ with tab4:
     split_ratio = st.slider("Train 비율", 0.5, 0.9, 0.7)
     
     if st.button("🚀 최적 조합 찾기"):
-        # [수정] 최적화 함수에 시장 필터 정보 전달
-        mkt_t = mkt_ticker if use_mkt else None
-        
+
         choices = {
             "ma_buy": _parse_choices(cand_ma_buy, "int"), "offset_ma_buy": _parse_choices(cand_off_ma_buy, "int"),
             "offset_cl_buy": _parse_choices(cand_off_cl_buy, "int"), "buy_operator": _parse_choices(cand_buy_op, "str"),
@@ -778,7 +776,6 @@ with tab4:
             "use_trend_in_buy": _parse_choices(cand_use_tr_buy, "bool"), "use_trend_in_sell": _parse_choices(cand_use_tr_sell, "bool"),
             "ma_compare_short": _parse_choices(cand_ma_s, "int"), "ma_compare_long": _parse_choices(cand_ma_l, "int"),
             "stop_loss_pct": _parse_choices(cand_stop, "float"), "take_profit_pct": _parse_choices(cand_take, "float"),
-            "trailing_stop_pct": _parse_choices(cand_trail, "float")
         }
         constraints = {"min_trades": min_trades, "min_winrate": min_win, "limit_mdd": limit_mdd, "min_train_ret": min_train_ret, "min_test_ret": min_test_ret}
         
@@ -803,3 +800,4 @@ with tab4:
             c1, c2 = st.columns([4, 1])
             with c1: st.dataframe(pd.DataFrame([row]), hide_index=True)
             with c2: st.button(f"🥇 적용하기 #{i}", key=f"apply_{i}", on_click=apply_opt_params, args=(row,))
+
