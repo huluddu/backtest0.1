@@ -784,8 +784,7 @@ with tab4:
                 signal_ticker, trade_ticker, start_date, end_date, split_ratio, choices, 
                 n_trials=int(n_trials), initial_cash=5000000, 
                 fee_bps=fee_bps, slip_bps=slip_bps, strategy_behavior=strategy_behavior, min_hold_days=min_hold_days, 
-                constraints=constraints,
-                market_ticker=mkt_t, market_ma_period=mkt_ma # [전달]
+                constraints=constraints             
             )
             
             if not df_opt.empty:
@@ -800,4 +799,3 @@ with tab4:
             c1, c2 = st.columns([4, 1])
             with c1: st.dataframe(pd.DataFrame([row]), hide_index=True)
             with c2: st.button(f"🥇 적용하기 #{i}", key=f"apply_{i}", on_click=apply_opt_params, args=(row,))
-
