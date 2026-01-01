@@ -15,7 +15,7 @@ import os
 # ==========================================
 # 1. 초기 설정 및 헬퍼 함수
 # ==========================================
-st.set_page_config(page_title="시그널 대시보드 Ultimate (Auto-Fix)", page_icon="📈", layout="wide")
+st.set_page_config(page_title="QuantLab: AI 백테스트 프로", page_icon="📈", layout="wide")
 
 STRATEGY_FILE = "my_strategies.json"
 
@@ -135,7 +135,7 @@ def _fast_ma(x: np.ndarray, w: int) -> np.ndarray:
     return y
 
 # ==========================================
-# 2. 데이터 로딩 (핵심 수정: 자동 기간 조정)
+# 2. 데이터 로딩
 # ==========================================
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_data(ticker: str, start_date, end_date) -> pd.DataFrame:
@@ -150,13 +150,9 @@ def get_data(ticker: str, start_date, end_date) -> pd.DataFrame:
             if not df.empty:
                 df = df.reset_index().rename(columns={"날짜":"Date","시가":"Open","고가":"High","저가":"Low","종가":"Close"})
         else:
-            # [핵심] 1차 시도: 사용자가 지정한 날짜로 다운로드
             df = yf.download(t, start=start_date, end=end_date, progress=False, auto_adjust=False)
-            
-            # [핵심] 2차 시도: 데이터가 없으면(상장일 문제 등) 전체 기간(Max)으로 재시도
             if df.empty:
                 df = yf.download(t, period="max", progress=False, auto_adjust=False)
-                # Max로 가져온 뒤, End Date 이후 데이터는 자름 (Start는 자동 보정됨)
                 if not df.empty:
                     df = df[df.index <= pd.Timestamp(end_date)]
 
@@ -185,7 +181,7 @@ def prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool):
     sig = get_data(signal_ticker, start_date, end_date).sort_values("Date")
     trd = get_data(trade_ticker,  start_date, end_date).sort_values("Date")
     if sig.empty or trd.empty: return None, None, None, None
-    sig = sig.rename(columns={"Close": "Close_sig"})[["Date", "Close_sig"]]
+    sig = sig.rename(columns={"Close": "Close_sig", "Open":"Open_sig", "High":"High_sig", "Low":"Low_sig"})[["Date", "Close_sig", "Open_sig", "High_sig", "Low_sig"]]
     trd = trd.rename(columns={"Open": "Open_trd", "High": "High_trd", "Low": "Low_trd", "Close": "Close_trd"})
     base = pd.merge(sig, trd, on="Date", how="inner").dropna().reset_index(drop=True)
     x_sig = base["Close_sig"].to_numpy(dtype=float)
@@ -196,7 +192,7 @@ def prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool):
     return base, x_sig, x_trd, ma_dict_sig
 
 # ==========================================
-# 3. 로직 함수 (보조지표 포함)
+# 3. 로직 함수 (보조지표, Gemini, 시그널)
 # ==========================================
 def calculate_indicators(close_data, rsi_period):
     rsi_period = int(rsi_period)
@@ -215,26 +211,32 @@ def ask_gemini_analysis(summary, params, ticker, api_key, model_name):
         m_name = model_name if model_name else "gemini-1.5-flash"
         model = genai.GenerativeModel(m_name)
         
+        # [UPGRADE] 프롬프트 강화: 더 구체적인 조언을 요구
         prompt = f"""
-        당신은 월스트리트의 전문 퀀트 트레이더입니다. 아래 백테스트 결과를 한국어로 냉철하게 분석해주세요.
+        당신은 상위 1% 퀀트 트레이더입니다. 초보 투자자가 만든 전략의 백테스트 결과를 분석하고 수정 방향을 제안해주세요.
+
+        [투자 대상]: {ticker}
+        [전략 설정]: {params}
         
-        [대상 자산]: {ticker}
-        [전략 파라미터]: {params}
-        
-        [백테스트 성과]
-        - 수익률: {summary.get('수익률 (%)')}%
-        - MDD (최대 낙폭): {summary.get('MDD (%)')}%
+        [백테스트 결과 요약]
+        - 총 수익률: {summary.get('수익률 (%)')}%
+        - 최대 낙폭(MDD): {summary.get('MDD (%)')}%
         - 승률: {summary.get('승률 (%)')}%
-        - 총 매매 횟수: {summary.get('총 매매 횟수')}회
+        - 평균 익절: {summary.get('평균익절 (%)', 0)}% vs 평균 손절: {summary.get('평균손절 (%)', 0)}%
         - Profit Factor: {summary.get('Profit Factor')}
-        
-        [분석 요청 사항]
-        1. 🛡️ **리스크 평가**: 이 전략이 폭락장에서도 버틸 수 있는지, MDD가 적절한지 평가하세요.
-        2. 💰 **수익성 평가**: 단순 보유(Buy&Hold) 대비 매매 비용을 고려했을 때 유효한지 평가하세요.
-        3. 💡 **개선 아이디어**: 파라미터(이평선, 손절 등)를 어떻게 수정하면 더 나을지 구체적으로 제안하세요.
-        4. ⚖️ **종합 의견**: 실전 투자에 바로 사용해도 될까요? (강력 추천 / 보류 / 비추천)
+        - 총 매매 횟수: {summary.get('총 매매 횟수')}회
+
+        [답변 양식]
+        1. 📊 **성과 진단**: 이 전략의 장점과 치명적인 단점은 무엇인가요? (MDD와 승률 중심으로)
+        2. 🛠️ **구체적인 튜닝 가이드**:
+           - 이평선 기간(MA)을 늘려야 할까요, 줄여야 할까요?
+           - 손절/익절 폭을 어떻게 조정하는 게 좋을까요?
+           - RSI 같은 보조지표 추가가 필요할까요?
+        3. 💡 **한 줄 평**: 이 전략을 실전매매에 쓸 수 있을까요? (강력추천/수정필요/폐기권장)
+
+        어려운 용어 없이, 주식 초보자도 바로 이해하고 설정을 바꿀 수 있게 설명해주세요.
         """
-        with st.spinner("🤖 Gemini가 전략을 분석 중입니다..."):
+        with st.spinner("🤖 Gemini가 매매 기록을 분석 중입니다..."):
             response = model.generate_content(prompt)
             return response.text
     except Exception as e: return f"❌ Gemini 분석 오류: {e}"
@@ -256,7 +258,6 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offse
     
     i = len(df) - 1
     try:
-        # [수정] 데이터 길이가 Offset보다 짧을 경우 예외처리
         if i - max(offset_cl_buy, offset_ma_buy, offset_cl_sell, offset_ma_sell) < 0:
             st.error(f"데이터가 너무 부족합니다. (총 {len(df)}일)")
             return
@@ -278,12 +279,12 @@ def check_signal_today(df, ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offse
         
         st.subheader(f"📌 오늘 시그널 ({ref_date})")
         st.write(f"📈 추세: {trend_msg}")
-        st.write(f"💡 매수: {cl_b:.2f} {buy_operator} {ma_b:.2f} {'+추세' if use_trend_in_buy else ''} → {'✅' if buy_ok else '❌'}")
-        st.write(f"💡 매도: {cl_s:.2f} {sell_operator} {ma_s:.2f} {'+역추세' if use_trend_in_sell else ''} → {'✅' if sell_ok else '❌'}")
+        st.write(f"💡 매수 조건: 종가 {cl_b:.2f} {buy_operator} 이평 {ma_b:.2f} {'+추세필터' if use_trend_in_buy else ''} → {'✅ 만족' if buy_ok else '❌ 불만족'}")
+        st.write(f"💡 매도 조건: 종가 {cl_s:.2f} {sell_operator} 이평 {ma_s:.2f} {'+역추세필터' if use_trend_in_sell else ''} → {'✅ 만족' if sell_ok else '❌ 불만족'}")
         
-        if buy_ok: st.success("📈 매수 시그널!")
-        elif sell_ok: st.error("📉 매도 시그널!")
-        else: st.info("⏸ 관망")
+        if buy_ok: st.success("🚀 강력 매수 시그널!")
+        elif sell_ok: st.error("💧 전량 매도 시그널!")
+        else: st.info("⏸ 관망 (Hold)")
     except Exception as e: st.error(f"계산 오류 (이평선 기간이 데이터보다 깁니다): {e}")
 
 def summarize_signal_today(df, p):
@@ -460,26 +461,41 @@ def backtest_fast(base, x_sig, x_trd, ma_dict_sig, ma_buy, offset_ma_buy, ma_sel
     
     buy_cache = None
     g_profit, g_loss, wins = 0, 0, 0
+    win_list, loss_list = [], []
+    
     df_res = pd.DataFrame(logs)
     for r in logs:
         if r['신호'] == 'BUY': buy_cache = r
         elif r['신호'] == 'SELL' and buy_cache:
             pb = buy_cache['체결가'] or buy_cache['종가']
             ps = r['체결가'] or r['종가']
-            ret = (ps - pb) / pb
-            if ret > 0: wins += 1; g_profit += ret
-            else: g_loss += abs(ret)
+            ret = (ps - pb) / pb * 100
+            if ret > 0: 
+                wins += 1; g_profit += ret
+                win_list.append(ret)
+            else: 
+                g_loss += abs(ret)
+                loss_list.append(ret)
             buy_cache = None
     
-    total_trades = wins + (len(df_res[df_res['신호']=='SELL']) - wins)
+    total_trades = wins + len(loss_list)
     win_rate = (wins / total_trades * 100) if total_trades > 0 else 0.0
     pf = (g_profit / g_loss) if g_loss > 0 else 999.0
+
+    avg_win = np.mean(win_list) if win_list else 0
+    avg_loss = np.mean(loss_list) if loss_list else 0
 
     return {
         "수익률 (%)": round((final_asset - initial_cash)/initial_cash*100, 2),
         "MDD (%)": round(mdd, 2), "승률 (%)": round(win_rate, 2),
         "Profit Factor": round(pf, 2), "총 매매 횟수": total_trades,
-        "최종 자산": round(final_asset), "매매 로그": logs
+        "평균익절 (%)": round(avg_win, 2), "평균손절 (%)": round(avg_loss, 2),
+        "최종 자산": round(final_asset), "매매 로그": logs,
+        # [UPGRADE] 차트 그리기용 추가 데이터 반환
+        "차트데이터": {
+            "ma_buy_arr": ma_buy_arr[idx0:], "ma_sell_arr": ma_sell_arr[idx0:],
+            "base": base.iloc[idx0:].reset_index(drop=True)
+        }
     }
 
 def auto_search_train_test(signal_ticker, trade_ticker, start_date, end_date, split_ratio, choices_dict, n_trials=50, initial_cash=5000000, fee_bps=0, slip_bps=0, strategy_behavior="1", min_hold_days=0, constraints=None, **kwargs):
@@ -561,7 +577,7 @@ def auto_search_train_test(signal_ticker, trade_ticker, start_date, end_date, sp
 _init_default_state()
 
 PRESETS = {
-    "SOXL 도전 전략": {"signal_ticker": "SOXL", "trade_ticker": "SOXL", "offset_cl_buy": 1, "buy_operator": ">", "offset_ma_buy": 1, "ma_buy": 20, "offset_cl_sell": 1, "sell_operator": ">", "offset_ma_sell": 20, "ma_sell": 10, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 10, "ma_compare_short": 5, "offset_compare_long": 20, "ma_compare_long": 5, "stop_loss_pct": 0.0, "take_profit_pct": 0.0},
+        "SOXL 도전 전략": {"signal_ticker": "SOXL", "trade_ticker": "SOXL", "offset_cl_buy": 1, "buy_operator": ">", "offset_ma_buy": 1, "ma_buy": 20, "offset_cl_sell": 1, "sell_operator": ">", "offset_ma_sell": 20, "ma_sell": 10, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 10, "ma_compare_short": 5, "offset_compare_long": 20, "ma_compare_long": 5, "stop_loss_pct": 0.0, "take_profit_pct": 0.0},
     "SOXL 안전 전략": {"signal_ticker": "SOXL", "trade_ticker": "SOXL", "offset_cl_buy": 20, "buy_operator": ">", "offset_ma_buy": 50, "ma_buy": 10, "offset_cl_sell": 50, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 10, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 20, "ma_compare_short": 10, "offset_compare_long": 20, "ma_compare_long": 1, "stop_loss_pct": 35.0, "take_profit_pct": 15.0},
     "TSLL 안전 전략": {"signal_ticker": "TSLL", "trade_ticker": "TSLL", "offset_cl_buy": 20, "buy_operator": "<", "offset_ma_buy": 5, "ma_buy": 10, "offset_cl_sell": 1, "sell_operator": ">", "offset_ma_sell": 1, "ma_sell": 60, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 20, "ma_compare_short": 50, "offset_compare_long": 20, "ma_compare_long": 5, "stop_loss_pct": 0.0, "take_profit_pct": 20.0},
     "GGLL 전략": {"signal_ticker": "GGLL", "trade_ticker": "GGLL", "offset_cl_buy": 1, "buy_operator": "<", "offset_ma_buy": 1, "ma_buy": 20, "offset_cl_sell": 20, "sell_operator": "<", "offset_ma_sell": 20, "ma_sell": 50, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 20, "ma_compare_short": 1, "offset_compare_long": 50, "ma_compare_long": 1, "stop_loss_pct": 15.0, "take_profit_pct": 0.0},
@@ -581,7 +597,7 @@ st.session_state["ALL_PRESETS_DATA"] = PRESETS
 
 with st.sidebar:
     st.header("⚙️ 설정 & Gemini")
-    api_key_input = st.text_input("Gemini API Key", type="password", key="gemini_key_input")
+    api_key_input = st.text_input("Gemini API Key", type="password", key="gemini_key_input", help="구글 AI 스튜디오에서 발급받은 키를 입력하세요")
     if api_key_input: 
         st.session_state["gemini_api_key"] = api_key_input
         try:
@@ -667,7 +683,6 @@ with st.expander("📈 상세 설정 (Offset, 비용 등)", expanded=True):
         if seed > 0: random.seed(seed)
 
     st.divider()
-    # ✅ RSI 설정
     st.markdown("#### 🔮 보조지표 설정")
     c_r1, c_r2 = st.columns(2)
     rsi_p = c_r1.number_input("RSI 기간 (Period)", 14, step=1, key="rsi_period")
@@ -678,13 +693,13 @@ with st.expander("📈 상세 설정 (Offset, 비용 등)", expanded=True):
 tab1, tab2, tab3, tab4 = st.tabs(["🎯 시그널", "📚 PRESETS", "🧪 백테스트", "🧬 실험실"])
 
 with tab1:
-    if st.button("📌 시그널 확인"):
+    if st.button("📌 오늘의 매매 시그널 확인", type="primary", use_container_width=True):
         check_signal_today(get_data(signal_ticker, start_date, end_date), ma_buy, offset_ma_buy, ma_sell, offset_ma_sell, offset_cl_buy, offset_cl_sell, ma_compare_short, ma_compare_long, offset_compare_short, offset_compare_long, buy_operator, sell_operator, use_trend_in_buy, use_trend_in_sell)
 
 with tab2:
-    if st.button("📚 일괄 확인"):
+    if st.button("📚 모든 프리셋 일괄 점검"):
         rows = []
-        with st.spinner("계산 중..."):
+        with st.spinner("모든 전략을 시뮬레이션 중입니다..."):
             for name, p in PRESETS.items():
                 t = p.get("signal_ticker", p.get("trade_ticker"))
                 res = summarize_signal_today(get_data(t, start_date, end_date), p)
@@ -692,11 +707,11 @@ with tab2:
                     "전략": name, "티커": t, "시그널": res["label"], 
                     "최근 BUY": res["last_buy"], "최근 SELL": res["last_sell"], "최근 HOLD": res["last_hold"]
                 })
-        st.dataframe(pd.DataFrame(rows))
+        st.dataframe(pd.DataFrame(rows), use_container_width=True)
 
 with tab3:
     should_run = False
-    if st.button("✅ 백테스트 실행", use_container_width=True): should_run = True
+    if st.button("✅ 백테스트 실행", type="primary", use_container_width=True): should_run = True
     if st.session_state.get("auto_run_trigger"): should_run = True; st.session_state["auto_run_trigger"] = False 
 
     if should_run:
@@ -709,7 +724,8 @@ with tab3:
         base, x_sig, x_trd, ma_dict = prepare_base(signal_ticker, trade_ticker, start_date, end_date, ma_pool)
         
         if base is not None:
-            res = backtest_fast(base, x_sig, x_trd, ma_dict, p_ma_buy, offset_ma_buy, p_ma_sell, offset_ma_sell, offset_cl_buy, offset_cl_sell, p_ma_compare_short, p_ma_compare_long, offset_compare_short, offset_compare_long, 5000000, stop_loss_pct, take_profit_pct, strategy_behavior, min_hold_days, fee_bps, slip_bps, use_trend_in_buy, use_trend_in_sell, buy_operator, sell_operator, 
+            with st.spinner("과거 데이터를 한 땀 한 땀 분석 중..."):
+                res = backtest_fast(base, x_sig, x_trd, ma_dict, p_ma_buy, offset_ma_buy, p_ma_sell, offset_ma_sell, offset_cl_buy, offset_cl_sell, p_ma_compare_short, p_ma_compare_long, offset_compare_short, offset_compare_long, 5000000, stop_loss_pct, take_profit_pct, strategy_behavior, min_hold_days, fee_bps, slip_bps, use_trend_in_buy, use_trend_in_sell, buy_operator, sell_operator, 
                                 use_rsi_filter=st.session_state.get("use_rsi_filter", False), rsi_period=st.session_state.get("rsi_period", 14), rsi_max=st.session_state.get("rsi_max", 70))
             st.session_state["bt_result"] = res
             if "ai_analysis" in st.session_state: del st.session_state["ai_analysis"]
@@ -718,11 +734,16 @@ with tab3:
     if "bt_result" in st.session_state:
         res = st.session_state["bt_result"]
         if res:
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("수익률", f"{res['수익률 (%)']}%")
-            c2.metric("MDD", f"{res['MDD (%)']}%")
-            c3.metric("승률", f"{res['승률 (%)']}%")
-            c4.metric("PF", res['Profit Factor'])
+            # [UPGRADE] 핵심 지표 4개 + 보조 지표 2개 (Avg Win/Loss)
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("총 수익률", f"{res['수익률 (%)']}%", delta_color="normal")
+            k2.metric("MDD (최대낙폭)", f"{res['MDD (%)']}%", delta_color="inverse")
+            k3.metric("승률", f"{res['승률 (%)']}%")
+            k4.metric("Profit Factor", res['Profit Factor'])
+            
+            k5, k6 = st.columns(2)
+            k5.metric("평균 익절률", f"{res.get('평균익절 (%)', 0)}%")
+            k6.metric("평균 손절률", f"{res.get('평균손절 (%)', 0)}%")
             
             df_log = pd.DataFrame(res['매매 로그'])
             if not df_log.empty:
@@ -730,34 +751,42 @@ with tab3:
                 benchmark = (df_log['종가'] / initial_price) * 5000000
                 drawdown = (df_log['자산'] - df_log['자산'].cummax()) / df_log['자산'].cummax() * 100
 
-                fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.25, 0.25], 
-                                    subplot_titles=("자산 & Benchmark", "RSI (14)", "MDD (%)"))
-
-                fig.add_trace(go.Scatter(x=df_log['날짜'], y=df_log['자산'], name='내 전략', line=dict(color='#00F0FF', width=2)), row=1, col=1)
-                fig.add_trace(go.Scatter(x=df_log['날짜'], y=benchmark, name='Buy & Hold', line=dict(color='gray', dash='dot')), row=1, col=1)
+                # [UPGRADE] 차트 고도화: 캔들스틱 + MA + 자산 곡선
+                chart_data = res.get("차트데이터", {})
+                base_df = chart_data.get("base")
                 
+                fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.25, 0.25], 
+                                    subplot_titles=("주가 & 매매타점 (Candle + MA)", "내 자산 vs 보유 전략 (Equity)", "MDD (%)"))
+
+                # 1. 캔들차트 & 이평선
+                if base_df is not None:
+                    fig.add_trace(go.Candlestick(x=base_df['Date'], open=base_df['Open_sig'], high=base_df['High_sig'], low=base_df['Low_sig'], close=base_df['Close_sig'], name='가격(Signal)'), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=base_df['Date'], y=chart_data['ma_buy_arr'], name='매수 기준선(MA)', line=dict(color='orange', width=1)), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=base_df['Date'], y=chart_data['ma_sell_arr'], name='매도 기준선(MA)', line=dict(color='blue', width=1, dash='dot')), row=1, col=1)
+
+                # 매매 포인트 표시
                 buys = df_log[df_log['신호']=='BUY']
                 sells_reg = df_log[(df_log['신호']=='SELL') & (df_log['손절발동']==False) & (df_log['익절발동']==False)]
                 sl = df_log[df_log['손절발동']==True]
                 tp = df_log[df_log['익절발동']==True]
 
-                fig.add_trace(go.Scatter(x=buys['날짜'], y=buys['자산'], mode='markers', marker=dict(color='#00FF00', symbol='triangle-up', size=10), name='매수'), row=1, col=1)
-                fig.add_trace(go.Scatter(x=sells_reg['날짜'], y=sells_reg['자산'], mode='markers', marker=dict(color='red', symbol='triangle-down', size=10), name='매도'), row=1, col=1)
-                fig.add_trace(go.Scatter(x=sl['날짜'], y=sl['자산'], mode='markers', marker=dict(color='purple', symbol='x', size=12), name='손절'), row=1, col=1)
-                fig.add_trace(go.Scatter(x=tp['날짜'], y=tp['자산'], mode='markers', marker=dict(color='gold', symbol='star', size=12), name='익절'), row=1, col=1)
+                fig.add_trace(go.Scatter(x=buys['날짜'], y=buys['종가'], mode='markers', marker=dict(color='#00FF00', symbol='triangle-up', size=12), name='매수 체결'), row=1, col=1)
+                fig.add_trace(go.Scatter(x=sells_reg['날짜'], y=sells_reg['종가'], mode='markers', marker=dict(color='red', symbol='triangle-down', size=12), name='매도 체결'), row=1, col=1)
+                fig.add_trace(go.Scatter(x=sl['날짜'], y=sl['종가'], mode='markers', marker=dict(color='purple', symbol='x', size=12), name='손절'), row=1, col=1)
+                fig.add_trace(go.Scatter(x=tp['날짜'], y=tp['종가'], mode='markers', marker=dict(color='gold', symbol='star', size=15), name='익절'), row=1, col=1)
 
-                if 'RSI' in df_log.columns:
-                    fig.add_trace(go.Scatter(x=df_log['날짜'], y=df_log['RSI'], name='RSI', line=dict(color='orange', width=1)), row=2, col=1)
-                    fig.add_hline(y=70, line_dash="dot", line_color="red", row=2, col=1)
-                    fig.add_hline(y=30, line_dash="dot", line_color="green", row=2, col=1)
-                    fig.add_hline(y=50, line_dash="dot", line_color="gray", row=2, col=1)
+                # 2. 자산 커브
+                fig.add_trace(go.Scatter(x=df_log['날짜'], y=df_log['자산'], name='내 전략 자산', line=dict(color='#00F0FF', width=2)), row=2, col=1)
+                fig.add_trace(go.Scatter(x=df_log['날짜'], y=benchmark, name='단순 보유(Buy&Hold)', line=dict(color='gray', dash='dot')), row=2, col=1)
 
+                # 3. MDD
                 fig.add_trace(go.Scatter(x=df_log['날짜'], y=drawdown, name='MDD', line=dict(color='#FF4B4B', width=1), fill='tozeroy'), row=3, col=1)
 
-                fig.update_layout(height=800, template="plotly_dark", hovermode="x unified")
+                fig.update_layout(height=900, template="plotly_dark", hovermode="x unified", xaxis_rangeslider_visible=False)
                 st.plotly_chart(fig, use_container_width=True)
 
-                st.markdown("### 📅 월별 수익률")
+                # 월별 수익률 히트맵
+                st.markdown("### 📅 월별 수익률 Heatmap")
                 df_log['Year'] = df_log['날짜'].dt.year
                 df_log['Month'] = df_log['날짜'].dt.month
                 df_log['Returns'] = df_log['자산'].pct_change()
@@ -767,23 +796,39 @@ with tab3:
                     z=pivot_ret.values * 100, x=pivot_ret.columns, y=pivot_ret.index,
                     colorscale='RdBu', zmid=0, texttemplate="%{z:.1f}%"
                 ))
-                fig_heat.update_layout(title="월별 수익률 Heatmap", height=400)
+                fig_heat.update_layout(height=400, margin=dict(t=30, b=30))
                 st.plotly_chart(fig_heat, use_container_width=True)
 
-                if st.button("✨ Gemini 분석"):
+                # [UPGRADE] 데이터 다운로드 버튼 추가
+                st.markdown("### 💾 결과 저장")
+                csv = df_log.to_csv(index=False).encode('utf-8-sig')
+                st.download_button(
+                    label="📥 매매 로그 다운로드 (CSV)",
+                    data=csv,
+                    file_name=f'backtest_log_{trade_ticker}_{datetime.date.today()}.csv',
+                    mime='text/csv',
+                )
+
+                st.divider()
+                st.markdown("### 🤖 Gemini AI 전략 컨설팅")
+                if st.button("✨ AI에게 분석 및 개선점 물어보기", type="primary"):
                     sl_txt = f"{stop_loss_pct}%" if stop_loss_pct > 0 else "미설정"
                     tp_txt = f"{take_profit_pct}%" if take_profit_pct > 0 else "미설정"
-                    current_params = f"매수: {ma_buy}일 이평, 손절: {sl_txt}, 익절: {tp_txt}"
-                    anl = ask_gemini_analysis(res, current_params, trade_ticker, st.session_state.get("gemini_api_key"), st.session_state.get("selected_model_name", "gemini-pro"))
-                    st.session_state["ai_analysis"] = anl      
+                    current_params = f"매수: {ma_buy}일 이평, 매도: {ma_sell}일 이평, 손절: {sl_txt}, 익절: {tp_txt}"
+                    anl = ask_gemini_analysis(res, current_params, trade_ticker, st.session_state.get("gemini_api_key"), st.session_state.get("selected_model_name", "gemini-1.5-flash"))
+                    st.session_state["ai_analysis"] = anl       
                 
-                if "ai_analysis" in st.session_state: st.markdown(st.session_state["ai_analysis"])
-                with st.expander("로그"): st.dataframe(df_log)
+                if "ai_analysis" in st.session_state:
+                    st.info(st.session_state["ai_analysis"])
+                
+                with st.expander("📝 상세 로그 보기"):
+                    st.dataframe(df_log, use_container_width=True)
         else:
             st.warning("⚠️ 매매 신호가 발생하지 않았습니다. (조건을 완화하거나 기간을 늘려보세요)")
 
 with tab4:
-    st.markdown("### 🧬 전략 파라미터 자동 최적화")
+    st.markdown("### 🧬 전략 파라미터 자동 최적화 (Grid Search)")
+    st.caption("여러 설정을 자동으로 돌려보고 가장 좋은 수익률을 찾아냅니다.")
     
     with st.expander("🔎 필터 및 정렬 설정", expanded=True):
         c1, c2 = st.columns(2)
@@ -831,7 +876,7 @@ with tab4:
     n_trials = st.number_input("시도 횟수", 10, 500, 50)
     split_ratio = st.slider("Train 비율", 0.5, 0.9, 0.7)
     
-    if st.button("🚀 최적 조합 찾기"):
+    if st.button("🚀 최적 조합 찾기 시작"):
         choices = {
             "ma_buy": _parse_choices(cand_ma_buy, "int"), "offset_ma_buy": _parse_choices(cand_off_ma_buy, "int"),
             "offset_cl_buy": _parse_choices(cand_off_cl_buy, "int"), "buy_operator": _parse_choices(cand_buy_op, "str"),
@@ -851,7 +896,7 @@ with tab4:
             "min_test_ret": min_test_ret
         }
         
-        with st.spinner("최적화 진행 중..."):
+        with st.spinner("AI가 최적의 파라미터를 탐색 중입니다..."):
             df_opt = auto_search_train_test(
                 signal_ticker, trade_ticker, start_date, end_date, split_ratio, choices, 
                 n_trials=int(n_trials), initial_cash=5000000, 
@@ -886,7 +931,10 @@ with tab4:
                         "Train_수익률(%)": st.column_config.NumberColumn(format="%.2f%%"),
                         "Full_MDD(%)": st.column_config.NumberColumn(format="%.2f%%"),
                         "Full_승률(%)": st.column_config.NumberColumn(format="%.2f%%"),
-                    }
+                    },
+                    use_container_width=True
                 )
             with c2:
-                st.button(f"🥇 적용하기 #{i}", key=f"apply_{i}", on_click=apply_opt_params, args=(row,))
+                if st.button(f"🥇 적용하기 #{i}", key=f"apply_{i}"):
+                    apply_opt_params(row)
+                    st.rerun()
