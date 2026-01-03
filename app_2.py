@@ -619,6 +619,13 @@ PRESETS = {
     "371460 TIGER차이나전기차SOLACTIVE": {"signal_ticker": "371460", "trade_ticker": "371460", "offset_cl_buy": 2, "buy_operator": ">", "offset_ma_buy": 6, "ma_buy": 10, "offset_cl_sell": 16, "sell_operator": ">", "offset_ma_sell": 2, "ma_sell": 5, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 6, "ma_compare_short": 15, "offset_compare_long": 16, "ma_compare_long": 10, "stop_loss_pct": 0.0, "take_profit_pct": 10.0},
     "483280 AITOP10커브드콜": {"signal_ticker": "483280", "trade_ticker": "483280", "offset_cl_buy": 26, "buy_operator": ">", "offset_ma_buy": 26, "ma_buy": 20, "offset_cl_sell": 26, "sell_operator": ">", "offset_ma_sell": 6, "ma_sell": 20, "use_trend_in_buy": True, "use_trend_in_sell": True, "offset_compare_short": 2, "ma_compare_short": 20, "offset_compare_long": 16, "ma_compare_long": 5, "stop_loss_pct": 0.0, "take_profit_pct": 0.0},
 }
+
+# 2. 내 컴퓨터에 저장된 전략(my_strategies.json) 불러와서 합치기
+saved_strategies = load_saved_strategies()
+if saved_strategies:
+    PRESETS.update(saved_strategies)
+
+# 3. 통합된 프리셋을 세션에 저장 (나중에 불러오기 위해)
 st.session_state["ALL_PRESETS_DATA"] = PRESETS
 
 with st.sidebar:
@@ -634,16 +641,45 @@ with st.sidebar:
     
     st.divider()
     with st.expander("💾 전략 저장/삭제"):
-        save_name = st.text_input("전략 이름")
-        if st.button("현재 설정 저장"):
-            if save_name:
-                params = {k: st.session_state[k] for k in ["signal_ticker_input","trade_ticker_input","ma_buy","offset_ma_buy","offset_cl_buy","buy_operator","ma_sell","offset_ma_sell","offset_cl_sell","sell_operator","use_trend_in_buy","use_trend_in_sell","ma_compare_short","ma_compare_long","offset_compare_short","offset_compare_long","stop_loss_pct","take_profit_pct","min_hold_days","use_market_filter","market_ticker_input","market_ma_period","use_bollinger","bb_period","bb_std","bb_entry_type","bb_exit_type"]}
-                save_strategy_to_file(save_name, params)
-                st.rerun()
+        save_name = st.text_input("새 전략 이름 입력")
         
-        del_name = st.selectbox("삭제할 전략", list(load_saved_strategies().keys())) if load_saved_strategies() else None
+        if st.button("현재 설정 저장하기"):
+            if save_name:
+                # 1. 현재 화면의 모든 설정값 긁어오기
+                keys_to_save = [
+                    "signal_ticker_input", "trade_ticker_input", "market_ticker_input",
+                    "buy_operator", "sell_operator", "strategy_behavior",
+                    "ma_buy", "ma_sell", 
+                    "offset_cl_buy", "offset_cl_sell", "offset_ma_buy", "offset_ma_sell",
+                    "use_trend_in_buy", "use_trend_in_sell",
+                    "ma_compare_short", "ma_compare_long", "offset_compare_short", "offset_compare_long",
+                    "stop_loss_pct", "take_profit_pct", "min_hold_days",
+                    "fee_bps", "slip_bps",
+                    "use_market_filter", "market_ma_period",
+                    "use_bollinger", "bb_period", "bb_std", "bb_entry_type", "bb_exit_type",
+                    "use_rsi_filter", "rsi_period", "rsi_max"
+                ]
+                
+                # 세션 상태에서 값 가져오기 (값이 없으면 기본값 처리)
+                params = {k: st.session_state.get(k) for k in keys_to_save}
+                
+                # 2. 파일에 저장
+                save_strategy_to_file(save_name, params)
+                
+                # 3. [핵심] 저장 후 프리셋 선택창을 방금 저장한 것으로 강제 변경
+                st.session_state["preset_name_selector"] = save_name
+                
+                # 4. 새로고침 (이제 목록에 뜹니다)
+                st.rerun()
+            else:
+                st.error("전략 이름을 입력해주세요!")
+        
+        # 삭제 로직
+        del_name = st.selectbox("삭제할 전략 선택", list(load_saved_strategies().keys())) if load_saved_strategies() else None
         if del_name and st.button("삭제"):
             delete_strategy_from_file(del_name)
+            # 삭제 후엔 '직접 설정'으로 돌아가기
+            st.session_state["preset_name_selector"] = "직접 설정"
             st.rerun()
 
     st.divider()
